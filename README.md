@@ -25,28 +25,24 @@ That's it. Your agents will now use the token-optimized output when running Ansi
 
 ## Output Format
 
-One line per event, pipe-delimited:
+Only changed, failed, and unreachable results are shown. Ok and skipped tasks produce zero output. A fully successful playbook run outputs just the RECAP line.
 
 ```
 PLAY | Configure webservers
-TASK | Install nginx
-ok | web01
-changed | web02 | diff: +worker_processes 4;
+TASK | Configure nginx
+changed | web01 | diff: +worker_processes 4;
 failed | db01 | msg: Permission denied
 RECAP | web01: ok=3 changed=1 | db01: ok=1 failed=1
 ```
-
-- Skipped tasks are hidden
-- No color codes or decorative formatting
-- Full details only on failures
 
 ## Commands
 
 ```bash
 ansible-agent-callback install              # Install plugin + configure agents
-ansible-agent-callback install --plugin-only # Just the plugin
 ansible-agent-callback install --all        # Auto-configure detected agents
 ansible-agent-callback install --agents claude-code,codex-cli
+ansible-agent-callback install --plugin-only # Just the plugin, no agent config
+ansible-agent-callback update               # Update plugin to latest version
 ansible-agent-callback uninstall            # Remove plugin + agent configs
 ansible-agent-callback env                  # Print export for other agents
 ```
