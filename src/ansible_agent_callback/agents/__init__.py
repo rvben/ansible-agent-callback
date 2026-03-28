@@ -38,40 +38,7 @@ def detected_agents():
 
 
 def select_agents_interactive(agents, preselected=None):
-    """Interactive multi-select. Returns list of selected agent modules."""
+    """Auto-configure detected agents. Returns list of detected agent modules."""
     if preselected is None:
         preselected = set()
-
-    if not sys.stdin.isatty():
-        return list(preselected)
-
-    selected = {i for i, a in enumerate(agents) if a in preselected}
-
-    print("Configure for AI agents:")
-    for i, agent in enumerate(agents):
-        check = "x" if i in selected else " "
-        detected = " [detected]" if agent.detect() else ""
-        print(f"  [{check}] {i + 1}. {agent.NAME:<20s} ({agent.CONFIG_PATH}){detected}")
-    print()
-    print("Enter numbers to toggle (comma-separated), or press Enter to accept:")
-    try:
-        line = input("> ").strip()
-    except (EOFError, KeyboardInterrupt):
-        print()
-        return []
-
-    if not line:
-        return [agents[i] for i in sorted(selected)]
-
-    # Toggle the specified indices
-    for token in line.split(","):
-        token = token.strip()
-        if token.isdigit():
-            idx = int(token) - 1
-            if 0 <= idx < len(agents):
-                if idx in selected:
-                    selected.discard(idx)
-                else:
-                    selected.add(idx)
-
-    return [agents[i] for i in sorted(selected)]
+    return list(preselected)

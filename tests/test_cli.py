@@ -50,5 +50,5 @@ class TestUninstallCommand:
 
     def test_uninstall_removes_plugin(self):
         cli.cmd_install(["--plugin-only"], install_dir=self.install_dir)
-        cli.cmd_uninstall(["--all"], install_dir=self.install_dir)
+        cli.cmd_uninstall([], install_dir=self.install_dir)
         assert not os.path.isfile(os.path.join(self.install_dir, "agent.py"))

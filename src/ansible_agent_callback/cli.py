@@ -10,7 +10,6 @@ from ansible_agent_callback.agents import (
     get_all_agents,
     get_agent_by_slug,
     detected_agents,
-    select_agents_interactive,
 )
 
 
@@ -18,8 +17,6 @@ def cmd_install(args: list[str], install_dir: str | None = None):
     parser = argparse.ArgumentParser(prog="ansible-agent-callback install")
     parser.add_argument("--agents", type=str, default=None,
                         help="Comma-separated agent slugs to configure")
-    parser.add_argument("--all", action="store_true", dest="all_agents",
-                        help="Configure all detected agents")
     parser.add_argument("--plugin-only", action="store_true",
                         help="Only install plugin, skip agent configuration")
     parsed = parser.parse_args(args)
@@ -30,25 +27,17 @@ def cmd_install(args: list[str], install_dir: str | None = None):
     if parsed.plugin_only:
         return
 
-    all_agents = get_all_agents()
-
     if parsed.agents:
         slugs = [s.strip() for s in parsed.agents.split(",")]
         selected = [a for s in slugs if (a := get_agent_by_slug(s))]
         if not selected:
             print(f"No matching agents found for: {parsed.agents}")
             return
-    elif parsed.all_agents:
-        selected = detected_agents()
-    elif sys.stdin.isatty():
-        detected = set(detected_agents())
-        selected = select_agents_interactive(all_agents, preselected=detected)
     else:
-        print("Non-interactive mode: use --agents or --all to configure agents")
-        return
+        selected = detected_agents()
 
     if not selected:
-        print("No agents selected")
+        print("No agents detected")
         return
 
     print()
@@ -59,31 +48,17 @@ def cmd_install(args: list[str], install_dir: str | None = None):
 
 def cmd_uninstall(args: list[str], install_dir: str | None = None):
     parser = argparse.ArgumentParser(prog="ansible-agent-callback uninstall")
-    parser.add_argument("--all", action="store_true", dest="all_agents",
-                        help="Unconfigure all agents without prompting")
     parsed = parser.parse_args(args)
-
-    result = installer.uninstall_plugin(install_dir)
-    print(result)
 
     all_agents = get_all_agents()
     configured = [a for a in all_agents if a.is_configured()]
 
-    if not configured:
-        return
-
-    if parsed.all_agents:
-        selected = configured
-    elif sys.stdin.isatty():
-        selected = select_agents_interactive(all_agents, preselected=set(configured))
-    else:
-        print("Non-interactive mode: use --all to unconfigure agents")
-        return
-
-    print()
-    for agent in selected:
+    for agent in configured:
         result = agent.unconfigure()
         print(f"  \u2713 {result}")
+
+    result = installer.uninstall_plugin(install_dir)
+    print(result)
 
 
 def cmd_env(args: list[str]):
