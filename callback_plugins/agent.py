@@ -14,6 +14,8 @@ DOCUMENTATION = """
         - Full details only on failures
 """
 
+import difflib
+
 from ansible.plugins.callback import CallbackBase
 
 
@@ -45,7 +47,6 @@ class CallbackModule(CallbackBase):
             before = diff.get("before", "")
             after = diff.get("after", "")
             if before and after:
-                import difflib
                 diff_lines = list(difflib.unified_diff(
                     str(before).splitlines(),
                     str(after).splitlines(),
