@@ -68,6 +68,11 @@ def cmd_uninstall(args: list[str], install_dir: str | None = None):
     print(result)
 
 
+def cmd_update(args: list[str], install_dir: str | None = None):
+    result = installer.install_plugin(install_dir)
+    print(result)
+
+
 def cmd_env(args: list[str]):
     print("export ANSIBLE_STDOUT_CALLBACK=agent")
 
@@ -79,6 +84,7 @@ def main():
     )
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser("install", help="Install plugin and configure agents")
+    subparsers.add_parser("update", help="Update the plugin to the latest version")
     subparsers.add_parser("uninstall", help="Remove plugin and agent configuration")
     subparsers.add_parser("env", help="Print environment variable export")
 
@@ -86,6 +92,8 @@ def main():
 
     if parsed.command == "install":
         cmd_install(remaining)
+    elif parsed.command == "update":
+        cmd_update(remaining)
     elif parsed.command == "uninstall":
         cmd_uninstall(remaining)
     elif parsed.command == "env":
