@@ -95,6 +95,10 @@ class CallbackModule(CallbackBase):
         if stderr:
             parts.append(f"stderr: {self._sanitize(stderr)}")
 
+        rc = result.result.get("rc")
+        if rc is not None and len(parts) == 1:
+            parts.append(f"rc: {rc}")
+
         if len(parts) == 1:
             parts.append("msg: (no details)")
 

@@ -157,6 +157,13 @@ class TestRunnerFailed:
         plugin.v2_runner_on_failed(result, ignore_errors=False)
         assert displayed_text(plugin) == [r"failed | db01 | msg: failed | stderr: err1\nerr2\nerr3"]
 
+    def test_failed_with_rc_only(self):
+        plugin = make_plugin()
+        result = make_result(host="db01")
+        result.result["rc"] = 1
+        plugin.v2_runner_on_failed(result, ignore_errors=False)
+        assert displayed_text(plugin) == ["failed | db01 | rc: 1"]
+
     def test_failed_ignore_errors(self):
         plugin = make_plugin()
         result = make_result(host="db01", msg="expected failure")
