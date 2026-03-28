@@ -1,14 +1,14 @@
 # ansible-agent-callback
 
-Token-optimized Ansible stdout callback plugin for AI agent consumption.
+Token-optimized Ansible stdout callback plugin for AI coding agents. Reduces output by 70-90% compared to the default callback.
 
-## Install
+## Quick Start
 
 ```bash
-make install
+uvx ansible-agent-callback install
 ```
 
-This copies `agent.py` to `~/.ansible/plugins/callback/`.
+This installs the callback plugin and interactively configures your AI coding agents (Claude Code, Codex CLI, Gemini CLI, etc.).
 
 ## Usage
 
@@ -16,9 +16,7 @@ This copies `agent.py` to `~/.ansible/plugins/callback/`.
 # Via environment variable
 ANSIBLE_STDOUT_CALLBACK=agent ansible-playbook site.yml
 
-# Or in ansible.cfg
-[defaults]
-stdout_callback = agent
+# Or configure permanently via the installer
 ```
 
 ## Output Format
@@ -38,8 +36,31 @@ RECAP | web01: ok=3 changed=1 | db01: ok=1 failed=1
 - No color codes or decorative formatting
 - Full details only on failures
 
-## Uninstall
+## Commands
 
 ```bash
-make uninstall
+ansible-agent-callback install              # Install plugin + configure agents
+ansible-agent-callback install --plugin-only # Just the plugin
+ansible-agent-callback install --all        # Auto-configure detected agents
+ansible-agent-callback install --agents claude-code,codex-cli
+ansible-agent-callback uninstall            # Remove plugin + agent configs
+ansible-agent-callback env                  # Print export for other agents
+```
+
+## Supported Agents
+
+| Agent | Config |
+|-------|--------|
+| Claude Code | `~/.claude/settings.json` |
+| Codex CLI | `~/.codex/config.toml` |
+| Gemini CLI | `~/.gemini/.env` |
+| Shell profile | `~/.zshrc` or `~/.bashrc` |
+| Ansible global | `~/.ansible.cfg` |
+
+## Development
+
+```bash
+make dev    # Install in editable mode
+make test   # Run tests
+make build  # Build package
 ```
