@@ -16,12 +16,23 @@ from ansible_agent_callback.agents import (
 
 def cmd_install(args: list[str], install_dir: str | None = None):
     parser = argparse.ArgumentParser(prog="ansible-agent-callback install")
-    parser.add_argument("--agents", type=str, default=None,
-                        help="Comma-separated agent slugs to configure")
-    parser.add_argument("--all", action="store_true", dest="all_agents",
-                        help="Configure all detected agents without prompting")
-    parser.add_argument("--plugin-only", action="store_true",
-                        help="Only install plugin, skip agent configuration")
+    parser.add_argument(
+        "--agents",
+        type=str,
+        default=None,
+        help="Comma-separated agent slugs to configure",
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        dest="all_agents",
+        help="Configure all detected agents without prompting",
+    )
+    parser.add_argument(
+        "--plugin-only",
+        action="store_true",
+        help="Only install plugin, skip agent configuration",
+    )
     parsed = parser.parse_args(args)
 
     result = installer.install_plugin(install_dir)
@@ -55,7 +66,7 @@ def cmd_install(args: list[str], install_dir: str | None = None):
 
 def cmd_uninstall(args: list[str], install_dir: str | None = None):
     parser = argparse.ArgumentParser(prog="ansible-agent-callback uninstall")
-    parsed = parser.parse_args(args)
+    parser.parse_args(args)
 
     all_agents = get_all_agents()
     configured = [a for a in all_agents if a.is_configured()]

@@ -57,7 +57,7 @@ def _unconfigure(env_path: str | None = None) -> str:
         return f"{NAME} not configured"
     with open(path) as f:
         lines = f.readlines()
-    lines = [l for l in lines if _MARKER not in l]
+    lines = [line for line in lines if _MARKER not in line]
     with open(path, "w") as f:
         f.write("".join(lines))
     return f"Unconfigured {NAME}"

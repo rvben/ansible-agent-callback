@@ -20,3 +20,7 @@ ansible-agent-callback = "ansible_agent_callback.cli:main"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.ruff.lint.per-file-ignores]
+"callback_plugins/agent.py" = ["E402"]
+"src/ansible_agent_callback/plugin.py" = ["E402"]

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import sys
 
 ALL_AGENTS: list = []
@@ -18,6 +17,7 @@ def _load_agents():
         gemini_cli,
         shell,
     )
+
     ALL_AGENTS.extend([claude_code, codex_cli, gemini_cli, shell, ansible_cfg])
 
 
@@ -60,7 +60,9 @@ def select_agents_interactive(agents, preselected=None):
     except termios.error:
         return list(preselected)
 
-    lines_written = len(agents) + 2  # header + agents + blank (hint has no trailing newline)
+    lines_written = (
+        len(agents) + 2
+    )  # header + agents + blank (hint has no trailing newline)
 
     def draw(first=False):
         buf = ""
@@ -110,9 +112,13 @@ def select_agents_interactive(agents, preselected=None):
         sys.stdout.write("  Configure for AI agents:\n")
         for i, agent in enumerate(agents):
             if i in selected:
-                sys.stdout.write(f"    \033[32m✓\033[0m {agent.NAME:<20s} {agent.CONFIG_PATH}\n")
+                sys.stdout.write(
+                    f"    \033[32m✓\033[0m {agent.NAME:<20s} {agent.CONFIG_PATH}\n"
+                )
             else:
-                sys.stdout.write(f"    \033[2m-\033[0m \033[2m{agent.NAME:<20s} {agent.CONFIG_PATH}\033[0m\n")
+                sys.stdout.write(
+                    f"    \033[2m-\033[0m \033[2m{agent.NAME:<20s} {agent.CONFIG_PATH}\033[0m\n"
+                )
         sys.stdout.write("\033[?25h")
         sys.stdout.flush()
 

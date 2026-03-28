@@ -5,8 +5,10 @@ import os
 from unittest.mock import MagicMock
 
 # Support both callback_plugins (local dev) and src layout
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'callback_plugins'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src', 'ansible_agent_callback'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "callback_plugins"))
+sys.path.insert(
+    0, os.path.join(os.path.dirname(__file__), "..", "src", "ansible_agent_callback")
+)
 
 try:
     import agent as _module
@@ -23,10 +25,7 @@ def make_plugin():
 
 def displayed_text(plugin):
     """Extract all displayed text from mock calls."""
-    return [
-        call.args[0]
-        for call in plugin._display.display.call_args_list
-    ]
+    return [call.args[0] for call in plugin._display.display.call_args_list]
 
 
 def make_play(name="Test Play"):
@@ -48,9 +47,19 @@ def make_task(name="Test Task", action="apt", uuid="task-1"):
     return task
 
 
-def make_result(host="web01", task_name="Test Task", task_action="apt",
-                task_uuid="task-1", changed=False, failed=False,
-                msg="", stderr="", diff=None, loop=None, results=None):
+def make_result(
+    host="web01",
+    task_name="Test Task",
+    task_action="apt",
+    task_uuid="task-1",
+    changed=False,
+    failed=False,
+    msg="",
+    stderr="",
+    diff=None,
+    loop=None,
+    results=None,
+):
     """Create a mock CallbackTaskResult."""
     result = MagicMock()
     result.host.get_name.return_value = host
@@ -179,7 +188,7 @@ class TestRunnerOk:
         result = make_result(host="web01", changed=True, diff=diff)
         plugin.v2_runner_on_ok(result)
         lines = displayed_text(plugin)
-        assert any("changed | web01 | diff: -workers 2" in l for l in lines)
+        assert any("changed | web01 | diff: -workers 2" in line for line in lines)
 
     def test_post_loop_aggregate_suppressed(self):
         plugin = make_plugin()
@@ -213,7 +222,9 @@ class TestRunnerFailed:
         plugin = make_plugin()
         result = make_result(host="db01", msg="failed", stderr="err detail")
         plugin.v2_runner_on_failed(result, ignore_errors=False)
-        assert "failed | db01 | msg: failed | stderr: err detail" in displayed_text(plugin)
+        assert "failed | db01 | msg: failed | stderr: err detail" in displayed_text(
+            plugin
+        )
 
     def test_failed_multiline_msg_joined(self):
         plugin = make_plugin()
@@ -225,7 +236,10 @@ class TestRunnerFailed:
         plugin = make_plugin()
         result = make_result(host="db01", msg="failed", stderr="err1\nerr2\nerr3")
         plugin.v2_runner_on_failed(result, ignore_errors=False)
-        assert r"failed | db01 | msg: failed | stderr: err1\nerr2\nerr3" in displayed_text(plugin)
+        assert (
+            r"failed | db01 | msg: failed | stderr: err1\nerr2\nerr3"
+            in displayed_text(plugin)
+        )
 
     def test_failed_with_rc_only(self):
         plugin = make_plugin()
@@ -279,7 +293,9 @@ class TestLoopItems:
         result = make_result(host="web01", msg="not found")
         result.result["item"] = "badpkg"
         plugin.v2_runner_item_on_failed(result)
-        assert "failed | web01 | item: badpkg | msg: not found" in displayed_text(plugin)
+        assert "failed | web01 | item: badpkg | msg: not found" in displayed_text(
+            plugin
+        )
 
     def test_item_skipped(self):
         plugin = make_plugin()
@@ -295,8 +311,13 @@ class TestRecap:
         stats = MagicMock()
         stats.processed = {"web01": {}}
         stats.summarize.return_value = {
-            "ok": 3, "changed": 1, "unreachable": 0,
-            "failures": 0, "skipped": 2, "rescued": 0, "ignored": 0,
+            "ok": 3,
+            "changed": 1,
+            "unreachable": 0,
+            "failures": 0,
+            "skipped": 2,
+            "rescued": 0,
+            "ignored": 0,
         }
         stats.custom = {}
         plugin.v2_playbook_on_stats(stats)
@@ -311,10 +332,24 @@ class TestRecap:
 
         def summarize(host):
             if host == "web01":
-                return {"ok": 3, "changed": 1, "unreachable": 0,
-                        "failures": 0, "skipped": 0, "rescued": 0, "ignored": 0}
-            return {"ok": 1, "changed": 0, "unreachable": 0,
-                    "failures": 1, "skipped": 0, "rescued": 0, "ignored": 0}
+                return {
+                    "ok": 3,
+                    "changed": 1,
+                    "unreachable": 0,
+                    "failures": 0,
+                    "skipped": 0,
+                    "rescued": 0,
+                    "ignored": 0,
+                }
+            return {
+                "ok": 1,
+                "changed": 0,
+                "unreachable": 0,
+                "failures": 1,
+                "skipped": 0,
+                "rescued": 0,
+                "ignored": 0,
+            }
 
         stats.summarize.side_effect = summarize
         stats.custom = {}
@@ -330,8 +365,13 @@ class TestRecap:
         stats = MagicMock()
         stats.processed = {"web01": {}}
         stats.summarize.return_value = {
-            "ok": 5, "changed": 0, "unreachable": 0,
-            "failures": 0, "skipped": 0, "rescued": 0, "ignored": 0,
+            "ok": 5,
+            "changed": 0,
+            "unreachable": 0,
+            "failures": 0,
+            "skipped": 0,
+            "rescued": 0,
+            "ignored": 0,
         }
         stats.custom = {}
         plugin.v2_playbook_on_stats(stats)

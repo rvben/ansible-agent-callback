@@ -61,11 +61,11 @@ def _unconfigure(config_path: str | None = None) -> str:
         return f"{NAME} not configured"
     with open(path) as f:
         lines = f.readlines()
-    lines = [l for l in lines if _ENV_KEY not in l]
+    lines = [line for line in lines if _ENV_KEY not in line]
     content = "".join(lines)
     if _SECTION_HEADER in content:
         section_idx = content.index(_SECTION_HEADER)
-        after = content[section_idx + len(_SECTION_HEADER):].lstrip("\n")
+        after = content[section_idx + len(_SECTION_HEADER) :].lstrip("\n")
         if not after or after.startswith("["):
             content = content[:section_idx] + after
     with open(path, "w") as f:
