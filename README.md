@@ -2,22 +2,26 @@
 
 Token-optimized Ansible stdout callback plugin for AI coding agents. Reduces output by 70-90% compared to the default callback.
 
-## Quick Start
+## Getting Started
+
+Install the plugin and configure your AI coding agents in one command:
 
 ```bash
 uvx ansible-agent-callback install
 ```
 
-This installs the callback plugin and interactively configures your AI coding agents (Claude Code, Codex CLI, Gemini CLI, etc.).
+This will:
+1. Copy the callback plugin to `~/.ansible/plugins/callback/`
+2. Detect which AI coding agents you have installed
+3. Let you pick which ones to configure (detected agents are pre-selected)
 
-## Usage
+To skip the interactive selector and configure everything automatically:
 
 ```bash
-# Via environment variable
-ANSIBLE_STDOUT_CALLBACK=agent ansible-playbook site.yml
-
-# Or configure permanently via the installer
+uvx ansible-agent-callback install --all
 ```
+
+That's it. Your agents will now use the token-optimized output when running Ansible.
 
 ## Output Format
 
