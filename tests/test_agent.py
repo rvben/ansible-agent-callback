@@ -118,12 +118,12 @@ class TestRunnerOk:
 
     def test_ok_changed_with_diff(self):
         plugin = make_plugin()
-        diff = {"before": "old\n", "after": "new\n"}
+        diff = {"before": "workers 2\n", "after": "workers 4\n"}
         result = make_result(host="web01", changed=True, diff=diff)
         plugin.v2_runner_on_ok(result)
         lines = displayed_text(plugin)
         assert len(lines) == 1
-        assert lines[0].startswith("changed | web01 | diff:")
+        assert lines[0] == "changed | web01 | diff: -workers 2"
 
 
 class TestRunnerFailed:
@@ -150,6 +150,12 @@ class TestRunnerFailed:
         result = make_result(host="db01", msg="line1\nline2\nline3")
         plugin.v2_runner_on_failed(result, ignore_errors=False)
         assert displayed_text(plugin) == [r"failed | db01 | msg: line1\nline2\nline3"]
+
+    def test_failed_multiline_stderr_joined(self):
+        plugin = make_plugin()
+        result = make_result(host="db01", msg="failed", stderr="err1\nerr2\nerr3")
+        plugin.v2_runner_on_failed(result, ignore_errors=False)
+        assert displayed_text(plugin) == [r"failed | db01 | msg: failed | stderr: err1\nerr2\nerr3"]
 
     def test_failed_ignore_errors(self):
         plugin = make_plugin()
