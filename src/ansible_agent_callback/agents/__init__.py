@@ -47,6 +47,7 @@ def select_agents_interactive(agents, preselected=None):
 
     selected = {i for i, a in enumerate(agents) if a in preselected}
     cursor = 0
+    total_lines = len(agents) + 2  # header + agents + footer
 
     try:
         import termios
@@ -57,24 +58,26 @@ def select_agents_interactive(agents, preselected=None):
     except (ImportError, termios.error, ValueError):
         return _select_numbered_fallback(agents, preselected)
 
-    def render():
-        sys.stdout.write(f"\033[{len(agents) + 2}A\033[J")
-        sys.stdout.write("Configure for AI agents:\n")
+    def render(first=False):
+        if not first:
+            # Move cursor to top of our output area
+            sys.stdout.write(f"\033[{total_lines}A")
+        # Clear from cursor to end of screen
+        sys.stdout.write("\033[J")
+        sys.stdout.write("Configure for AI agents:\r\n")
         for i, agent in enumerate(agents):
             check = "x" if i in selected else " "
             prefix = ">" if i == cursor else " "
             detected = " [detected]" if agent.detect() else ""
             sys.stdout.write(
-                f"  {prefix} [{check}] {agent.NAME:<20s} ({agent.CONFIG_PATH}){detected}\n"
+                f"  {prefix} [{check}] {agent.NAME:<20s} ({agent.CONFIG_PATH}){detected}\r\n"
             )
-        sys.stdout.write("\n\u2191\u2193 navigate  \u2423 toggle  \u23ce confirm")
+        sys.stdout.write("\u2191\u2193 navigate  \u2423 toggle  \u23ce confirm")
         sys.stdout.flush()
 
     try:
         tty.setraw(fd)
-        sys.stdout.write("\n" * (len(agents) + 2))
-        sys.stdout.flush()
-        render()
+        render(first=True)
 
         while True:
             ch = sys.stdin.read(1)
@@ -98,7 +101,7 @@ def select_agents_interactive(agents, preselected=None):
                 raise KeyboardInterrupt
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-        sys.stdout.write("\n\n")
+        sys.stdout.write("\r\n\r\n")
         sys.stdout.flush()
 
     return [agents[i] for i in sorted(selected)]
