@@ -1,6 +1,7 @@
 # ansible-agent-callback
 
-Token-optimized Ansible stdout callback plugin for AI coding agents. Reduces output by 70-90% compared to the default callback.
+Token-optimized Ansible stdout callback plugin for AI coding agents.
+Reduces output by 70-90% compared to the default callback.
 
 ## Getting Started
 
@@ -11,6 +12,7 @@ uvx ansible-agent-callback install
 ```
 
 This will:
+
 1. Copy the callback plugin to `~/.ansible/plugins/callback/`
 2. Detect which AI coding agents you have installed
 3. Let you pick which ones to configure (detected agents are pre-selected)
@@ -25,9 +27,11 @@ That's it. Your agents will now use the token-optimized output when running Ansi
 
 ## Output Format
 
-Only changed, failed, and unreachable results are shown. Ok and skipped tasks produce zero output. A fully successful playbook run outputs just the RECAP line.
+Only changed, failed, and unreachable results are shown.
+Ok and skipped tasks produce zero output.
+A fully successful playbook run outputs just the RECAP line.
 
-```
+```text
 PLAY | Configure webservers
 TASK | Configure nginx
 changed | web01 | diff: +worker_processes 4;
