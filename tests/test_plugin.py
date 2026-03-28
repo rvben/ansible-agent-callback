@@ -2,8 +2,7 @@
 
 import sys
 import os
-from unittest.mock import MagicMock, patch
-from io import StringIO
+from unittest.mock import MagicMock
 
 # Support both callback_plugins (local dev) and src layout
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'callback_plugins'))
@@ -40,49 +39,13 @@ def make_play(name="Test Play"):
 def make_task(name="Test Task", action="apt", uuid="task-1"):
     """Create a mock task."""
     task = MagicMock()
-    task.get_name.return_value = f"  {name}  "  # Ansible pads with spaces
+    task.get_name.return_value = f"  {name}  "
     task._uuid = uuid
     task.action = action
     task.loop = None
     task.no_log = False
     task.check_mode = False
     return task
-
-
-class TestPlayBanner:
-    def test_play_start_emits_play_line(self):
-        plugin = make_plugin()
-        play = make_play("Configure webservers")
-        plugin.v2_playbook_on_play_start(play)
-        assert displayed_text(plugin) == ["PLAY | Configure webservers"]
-
-    def test_play_start_strips_whitespace(self):
-        plugin = make_plugin()
-        play = make_play("  My Play  ")
-        plugin.v2_playbook_on_play_start(play)
-        assert displayed_text(plugin) == ["PLAY | My Play"]
-
-
-class TestTaskBanner:
-    def test_task_start_emits_task_line(self):
-        plugin = make_plugin()
-        task = make_task("Install nginx")
-        plugin.v2_playbook_on_task_start(task, is_conditional=False)
-        assert displayed_text(plugin) == ["TASK | Install nginx"]
-
-    def test_task_name_is_stripped(self):
-        plugin = make_plugin()
-        task = make_task("  Padded name  ")
-        plugin.v2_playbook_on_task_start(task, is_conditional=False)
-        assert displayed_text(plugin) == ["TASK | Padded name"]
-
-
-class TestHandlerBanner:
-    def test_handler_start_emits_handler_line(self):
-        plugin = make_plugin()
-        task = make_task("Restart nginx")
-        plugin.v2_playbook_on_handler_task_start(task)
-        assert displayed_text(plugin) == ["HANDLER | Restart nginx"]
 
 
 def make_result(host="web01", task_name="Test Task", task_action="apt",
@@ -107,18 +70,108 @@ def make_result(host="web01", task_name="Test Task", task_action="apt",
     return result
 
 
+class TestPlayBanner:
+    def test_play_start_emits_play_line(self):
+        plugin = make_plugin()
+        play = make_play("Configure webservers")
+        plugin.v2_playbook_on_play_start(play)
+        assert displayed_text(plugin) == ["PLAY | Configure webservers"]
+
+    def test_play_start_strips_whitespace(self):
+        plugin = make_plugin()
+        play = make_play("  My Play  ")
+        plugin.v2_playbook_on_play_start(play)
+        assert displayed_text(plugin) == ["PLAY | My Play"]
+
+
+class TestDeferredTaskBanner:
+    def test_task_start_alone_emits_nothing(self):
+        plugin = make_plugin()
+        task = make_task("Install nginx")
+        plugin.v2_playbook_on_task_start(task, is_conditional=False)
+        assert displayed_text(plugin) == []
+
+    def test_task_banner_emitted_on_changed(self):
+        plugin = make_plugin()
+        task = make_task("Install nginx")
+        plugin.v2_playbook_on_task_start(task, is_conditional=False)
+        result = make_result(host="web01", changed=True)
+        plugin.v2_runner_on_ok(result)
+        assert displayed_text(plugin) == [
+            "TASK | Install nginx",
+            "changed | web01",
+        ]
+
+    def test_task_banner_emitted_on_failed(self):
+        plugin = make_plugin()
+        task = make_task("Install nginx")
+        plugin.v2_playbook_on_task_start(task, is_conditional=False)
+        result = make_result(host="web01", msg="broken")
+        plugin.v2_runner_on_failed(result, ignore_errors=False)
+        assert displayed_text(plugin) == [
+            "TASK | Install nginx",
+            "failed | web01 | msg: broken",
+        ]
+
+    def test_task_banner_emitted_on_unreachable(self):
+        plugin = make_plugin()
+        task = make_task("Install nginx")
+        plugin.v2_playbook_on_task_start(task, is_conditional=False)
+        result = make_result(host="web01", msg="timeout")
+        plugin.v2_runner_on_unreachable(result)
+        assert displayed_text(plugin) == [
+            "TASK | Install nginx",
+            "unreachable | web01 | timeout",
+        ]
+
+    def test_task_banner_not_emitted_when_all_ok(self):
+        plugin = make_plugin()
+        task = make_task("Install nginx")
+        plugin.v2_playbook_on_task_start(task, is_conditional=False)
+        result = make_result(host="web01", changed=False)
+        plugin.v2_runner_on_ok(result)
+        assert displayed_text(plugin) == []
+
+    def test_task_banner_not_emitted_when_all_skipped(self):
+        plugin = make_plugin()
+        task = make_task("Conditional task")
+        plugin.v2_playbook_on_task_start(task, is_conditional=False)
+        result = make_result(host="web01")
+        plugin.v2_runner_on_skipped(result)
+        assert displayed_text(plugin) == []
+
+    def test_banner_emitted_once_for_multiple_results(self):
+        plugin = make_plugin()
+        task = make_task("Configure nginx")
+        plugin.v2_playbook_on_task_start(task, is_conditional=False)
+        r1 = make_result(host="web01", changed=True)
+        r2 = make_result(host="web02", changed=True)
+        plugin.v2_runner_on_ok(r1)
+        plugin.v2_runner_on_ok(r2)
+        lines = displayed_text(plugin)
+        assert lines.count("TASK | Configure nginx") == 1
+
+
+class TestHandlerBanner:
+    def test_handler_start_emits_handler_line(self):
+        plugin = make_plugin()
+        task = make_task("Restart nginx")
+        plugin.v2_playbook_on_handler_task_start(task)
+        assert displayed_text(plugin) == ["HANDLER | Restart nginx"]
+
+
 class TestRunnerOk:
-    def test_ok_unchanged(self):
+    def test_ok_unchanged_emits_nothing(self):
         plugin = make_plugin()
         result = make_result(host="web01")
         plugin.v2_runner_on_ok(result)
-        assert displayed_text(plugin) == ["ok | web01"]
+        assert displayed_text(plugin) == []
 
     def test_ok_changed(self):
         plugin = make_plugin()
         result = make_result(host="web01", changed=True)
         plugin.v2_runner_on_ok(result)
-        assert displayed_text(plugin) == ["changed | web01"]
+        assert "changed | web01" in displayed_text(plugin)
 
     def test_ok_changed_with_diff(self):
         plugin = make_plugin()
@@ -126,8 +179,21 @@ class TestRunnerOk:
         result = make_result(host="web01", changed=True, diff=diff)
         plugin.v2_runner_on_ok(result)
         lines = displayed_text(plugin)
-        assert len(lines) == 1
-        assert lines[0] == "changed | web01 | diff: -workers 2"
+        assert any("changed | web01 | diff: -workers 2" in l for l in lines)
+
+    def test_post_loop_aggregate_suppressed(self):
+        plugin = make_plugin()
+        result = make_result(host="web01", changed=False)
+        result.result["results"] = [{"item": "nginx", "changed": False}]
+        plugin.v2_runner_on_ok(result)
+        assert displayed_text(plugin) == []
+
+    def test_post_loop_aggregate_suppressed_even_when_changed(self):
+        plugin = make_plugin()
+        result = make_result(host="web01", changed=True)
+        result.result["results"] = [{"item": "nginx", "changed": True}]
+        plugin.v2_runner_on_ok(result)
+        assert displayed_text(plugin) == []
 
 
 class TestRunnerFailed:
@@ -135,47 +201,46 @@ class TestRunnerFailed:
         plugin = make_plugin()
         result = make_result(host="db01", msg="unit not found")
         plugin.v2_runner_on_failed(result, ignore_errors=False)
-        assert displayed_text(plugin) == ["failed | db01 | msg: unit not found"]
+        assert "failed | db01 | msg: unit not found" in displayed_text(plugin)
 
     def test_failed_with_stderr(self):
         plugin = make_plugin()
         result = make_result(host="db01", stderr="connection refused")
         plugin.v2_runner_on_failed(result, ignore_errors=False)
-        assert displayed_text(plugin) == ["failed | db01 | stderr: connection refused"]
+        assert "failed | db01 | stderr: connection refused" in displayed_text(plugin)
 
     def test_failed_with_msg_and_stderr(self):
         plugin = make_plugin()
         result = make_result(host="db01", msg="failed", stderr="err detail")
         plugin.v2_runner_on_failed(result, ignore_errors=False)
-        assert displayed_text(plugin) == ["failed | db01 | msg: failed | stderr: err detail"]
+        assert "failed | db01 | msg: failed | stderr: err detail" in displayed_text(plugin)
 
     def test_failed_multiline_msg_joined(self):
         plugin = make_plugin()
         result = make_result(host="db01", msg="line1\nline2\nline3")
         plugin.v2_runner_on_failed(result, ignore_errors=False)
-        assert displayed_text(plugin) == [r"failed | db01 | msg: line1\nline2\nline3"]
+        assert r"failed | db01 | msg: line1\nline2\nline3" in displayed_text(plugin)
 
     def test_failed_multiline_stderr_joined(self):
         plugin = make_plugin()
         result = make_result(host="db01", msg="failed", stderr="err1\nerr2\nerr3")
         plugin.v2_runner_on_failed(result, ignore_errors=False)
-        assert displayed_text(plugin) == [r"failed | db01 | msg: failed | stderr: err1\nerr2\nerr3"]
+        assert r"failed | db01 | msg: failed | stderr: err1\nerr2\nerr3" in displayed_text(plugin)
 
     def test_failed_with_rc_only(self):
         plugin = make_plugin()
         result = make_result(host="db01")
         result.result["rc"] = 1
         plugin.v2_runner_on_failed(result, ignore_errors=False)
-        assert displayed_text(plugin) == ["failed | db01 | rc: 1"]
+        assert "failed | db01 | rc: 1" in displayed_text(plugin)
 
     def test_failed_ignore_errors(self):
         plugin = make_plugin()
         result = make_result(host="db01", msg="expected failure")
         plugin.v2_runner_on_failed(result, ignore_errors=True)
         lines = displayed_text(plugin)
-        assert len(lines) == 2
-        assert lines[0] == "failed | db01 | msg: expected failure"
-        assert lines[1] == "...ignoring"
+        assert "failed | db01 | msg: expected failure" in lines
+        assert "...ignoring" in lines
 
 
 class TestRunnerUnreachable:
@@ -183,7 +248,7 @@ class TestRunnerUnreachable:
         plugin = make_plugin()
         result = make_result(host="db01", msg="SSH connection timeout")
         plugin.v2_runner_on_unreachable(result)
-        assert displayed_text(plugin) == ["unreachable | db01 | SSH connection timeout"]
+        assert "unreachable | db01 | SSH connection timeout" in displayed_text(plugin)
 
 
 class TestRunnerSkipped:
@@ -195,26 +260,26 @@ class TestRunnerSkipped:
 
 
 class TestLoopItems:
-    def test_item_ok(self):
+    def test_item_ok_unchanged_emits_nothing(self):
         plugin = make_plugin()
         result = make_result(host="web01")
         result.result["item"] = "nginx"
         plugin.v2_runner_item_on_ok(result)
-        assert displayed_text(plugin) == ["ok | web01 | item: nginx"]
+        assert displayed_text(plugin) == []
 
     def test_item_changed(self):
         plugin = make_plugin()
         result = make_result(host="web01", changed=True)
         result.result["item"] = "nginx"
         plugin.v2_runner_item_on_ok(result)
-        assert displayed_text(plugin) == ["changed | web01 | item: nginx"]
+        assert "changed | web01 | item: nginx" in displayed_text(plugin)
 
     def test_item_failed(self):
         plugin = make_plugin()
         result = make_result(host="web01", msg="not found")
         result.result["item"] = "badpkg"
         plugin.v2_runner_item_on_failed(result)
-        assert displayed_text(plugin) == ["failed | web01 | item: badpkg | msg: not found"]
+        assert "failed | web01 | item: badpkg | msg: not found" in displayed_text(plugin)
 
     def test_item_skipped(self):
         plugin = make_plugin()

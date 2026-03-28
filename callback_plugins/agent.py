@@ -10,8 +10,9 @@ DOCUMENTATION = """
     description:
         - Minimal, pipe-delimited output designed to reduce token usage
         - One line per event, no color codes, no decorative banners
-        - Skipped tasks are hidden entirely
-        - Full details only on failures
+        - Only changed, failed, and unreachable results are shown
+        - Skipped tasks and ok results are hidden entirely
+        - RECAP line always shown with non-zero counts
 """
 
 import difflib
@@ -24,16 +25,24 @@ class CallbackModule(CallbackBase):
     CALLBACK_TYPE = "stdout"
     CALLBACK_NAME = "agent"
 
+    def __init__(self):
+        super().__init__()
+        self._pending_task = None
+
     def _emit(self, line):
         self._display.display(line)
+
+    def _flush_task_banner(self):
+        if self._pending_task:
+            self._emit(f"TASK | {self._pending_task}")
+            self._pending_task = None
 
     def v2_playbook_on_play_start(self, play):
         name = play.get_name().strip()
         self._emit(f"PLAY | {name}")
 
     def v2_playbook_on_task_start(self, task, is_conditional):
-        name = task.get_name().strip()
-        self._emit(f"TASK | {name}")
+        self._pending_task = task.get_name().strip()
 
     def v2_playbook_on_handler_task_start(self, task):
         name = task.get_name().strip()
@@ -69,21 +78,28 @@ class CallbackModule(CallbackBase):
         return str(text).replace("\n", r"\n").replace("\r", r"\r")
 
     def v2_runner_on_ok(self, result):
+        # Suppress post-loop aggregate line
+        if "results" in result.result:
+            return
+
         host = result.host.get_name()
         changed = result.result.get("changed", False)
 
-        if changed:
-            parts = [f"changed | {host}"]
-            diff = result.result.get("diff")
-            if diff:
-                summary = self._format_diff_summary(diff)
-                if summary:
-                    parts.append(f"diff: {summary}")
-            self._emit(" | ".join(parts))
-        else:
-            self._emit(f"ok | {host}")
+        # Only show changed results — ok results are noise
+        if not changed:
+            return
+
+        self._flush_task_banner()
+        parts = [f"changed | {host}"]
+        diff = result.result.get("diff")
+        if diff:
+            summary = self._format_diff_summary(diff)
+            if summary:
+                parts.append(f"diff: {summary}")
+        self._emit(" | ".join(parts))
 
     def v2_runner_on_failed(self, result, ignore_errors=False):
+        self._flush_task_banner()
         host = result.host.get_name()
         parts = [f"failed | {host}"]
 
@@ -108,12 +124,13 @@ class CallbackModule(CallbackBase):
             self._emit("...ignoring")
 
     def v2_runner_on_unreachable(self, result):
+        self._flush_task_banner()
         host = result.host.get_name()
         msg = self._sanitize(result.result.get("msg", ""))
         self._emit(f"unreachable | {host} | {msg}")
 
     def v2_runner_on_skipped(self, result):
-        pass  # Hidden entirely per spec
+        pass
 
     def _get_item_label(self, result_dict):
         """Get the item label from a result dict."""
@@ -121,13 +138,18 @@ class CallbackModule(CallbackBase):
         return str(item)
 
     def v2_runner_item_on_ok(self, result):
+        # Only show changed loop items
+        changed = result.result.get("changed", False)
+        if not changed:
+            return
+
+        self._flush_task_banner()
         host = result.host.get_name()
         item = self._get_item_label(result.result)
-        changed = result.result.get("changed", False)
-        status = "changed" if changed else "ok"
-        self._emit(f"{status} | {host} | item: {item}")
+        self._emit(f"changed | {host} | item: {item}")
 
     def v2_runner_item_on_failed(self, result):
+        self._flush_task_banner()
         host = result.host.get_name()
         item = self._get_item_label(result.result)
         parts = [f"failed | {host} | item: {item}"]
@@ -143,7 +165,7 @@ class CallbackModule(CallbackBase):
         self._emit(" | ".join(parts))
 
     def v2_runner_item_on_skipped(self, result):
-        pass  # Hidden entirely per spec
+        pass
 
     def v2_playbook_on_stats(self, stats):
         hosts = sorted(stats.processed.keys())
