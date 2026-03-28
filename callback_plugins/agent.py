@@ -109,3 +109,33 @@ class CallbackModule(CallbackBase):
 
     def v2_runner_on_skipped(self, result):
         pass  # Hidden entirely per spec
+
+    def _get_item_label(self, result_dict):
+        """Get the item label from a result dict."""
+        item = result_dict.get("item", "")
+        return str(item)
+
+    def v2_runner_item_on_ok(self, result):
+        host = result.host.get_name()
+        item = self._get_item_label(result.result)
+        changed = result.result.get("changed", False)
+        status = "changed" if changed else "ok"
+        self._emit(f"{status} | {host} | item: {item}")
+
+    def v2_runner_item_on_failed(self, result):
+        host = result.host.get_name()
+        item = self._get_item_label(result.result)
+        parts = [f"failed | {host} | item: {item}"]
+
+        msg = result.result.get("msg")
+        if msg:
+            parts.append(f"msg: {self._sanitize(msg)}")
+
+        stderr = result.result.get("stderr")
+        if stderr:
+            parts.append(f"stderr: {self._sanitize(stderr)}")
+
+        self._emit(" | ".join(parts))
+
+    def v2_runner_item_on_skipped(self, result):
+        pass  # Hidden entirely per spec
