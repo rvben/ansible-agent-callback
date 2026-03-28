@@ -2,7 +2,7 @@ PLUGIN_NAME := agent
 PLUGIN_SRC := callback_plugins/$(PLUGIN_NAME).py
 INSTALL_DIR := $(HOME)/.ansible/plugins/callback
 
-.PHONY: install uninstall test lint build dev
+.PHONY: install uninstall test lint fmt build dev
 
 install: $(PLUGIN_SRC)
 	@mkdir -p $(INSTALL_DIR)
@@ -19,6 +19,12 @@ test:
 lint:
 	python3 -m py_compile callback_plugins/agent.py
 	python3 -m py_compile src/ansible_agent_callback/plugin.py
+	uvx ruff check .
+	uvx ruff format --check .
+
+fmt:
+	uvx ruff check --fix .
+	uvx ruff format .
 
 build:
 	uv build
