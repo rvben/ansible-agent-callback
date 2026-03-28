@@ -5,15 +5,19 @@ import os
 from unittest.mock import MagicMock, patch
 from io import StringIO
 
-# Add callback_plugins to path so we can import the module
+# Support both callback_plugins (local dev) and src layout
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'callback_plugins'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src', 'ansible_agent_callback'))
 
-import agent
+try:
+    import agent as _module
+except ImportError:
+    import plugin as _module
 
 
 def make_plugin():
     """Create a plugin instance with captured output."""
-    plugin = agent.CallbackModule()
+    plugin = _module.CallbackModule()
     plugin._display = MagicMock()
     return plugin
 

@@ -2,7 +2,7 @@ PLUGIN_NAME := agent
 PLUGIN_SRC := callback_plugins/$(PLUGIN_NAME).py
 INSTALL_DIR := $(HOME)/.ansible/plugins/callback
 
-.PHONY: install uninstall test lint
+.PHONY: install uninstall test lint build dev
 
 install: $(PLUGIN_SRC)
 	@mkdir -p $(INSTALL_DIR)
@@ -18,3 +18,10 @@ test:
 
 lint:
 	python3 -m py_compile callback_plugins/agent.py
+	python3 -m py_compile src/ansible_agent_callback/plugin.py
+
+build:
+	uv build
+
+dev:
+	uv pip install -e .
