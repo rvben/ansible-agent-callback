@@ -14,7 +14,7 @@ uninstall:
 	@echo "Removed $(INSTALL_DIR)/$(PLUGIN_NAME).py"
 
 test:
-	uv run --with pytest pytest tests/ -v
+	uv run --with pytest --with ansible-core pytest tests/ -v
 
 lint:
 	python3 -m py_compile callback_plugins/agent.py
