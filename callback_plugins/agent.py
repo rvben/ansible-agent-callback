@@ -139,3 +139,25 @@ class CallbackModule(CallbackBase):
 
     def v2_runner_item_on_skipped(self, result):
         pass  # Hidden entirely per spec
+
+    def v2_playbook_on_stats(self, stats):
+        hosts = sorted(stats.processed.keys())
+        host_summaries = []
+        for host in hosts:
+            s = stats.summarize(host)
+            counts = {
+                "ok": s.get("ok", 0),
+                "changed": s.get("changed", 0),
+                "unreachable": s.get("unreachable", 0),
+                "failed": s.get("failures", 0),
+                "skipped": s.get("skipped", 0),
+                "rescued": s.get("rescued", 0),
+                "ignored": s.get("ignored", 0),
+            }
+            parts = [f"{k}={v}" for k, v in counts.items() if v > 0]
+            if parts:
+                host_summaries.append(f"{host}: {' '.join(parts)}")
+            else:
+                host_summaries.append(f"{host}: ok=0")
+
+        self._emit("RECAP | " + " | ".join(host_summaries))
