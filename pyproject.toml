@@ -1,6 +1,6 @@
 [project]
 name = "ansible-agent-callback"
-version = "0.1.1"
+version = "0.1.2"
 description = "Token-optimized Ansible output for AI coding agents"
 readme = "README.md"
 requires-python = ">=3.11"
