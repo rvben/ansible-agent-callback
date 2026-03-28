@@ -10,6 +10,7 @@ from ansible_agent_callback.agents import (
     get_all_agents,
     get_agent_by_slug,
     detected_agents,
+    select_agents_interactive,
 )
 
 
@@ -17,6 +18,8 @@ def cmd_install(args: list[str], install_dir: str | None = None):
     parser = argparse.ArgumentParser(prog="ansible-agent-callback install")
     parser.add_argument("--agents", type=str, default=None,
                         help="Comma-separated agent slugs to configure")
+    parser.add_argument("--all", action="store_true", dest="all_agents",
+                        help="Configure all detected agents without prompting")
     parser.add_argument("--plugin-only", action="store_true",
                         help="Only install plugin, skip agent configuration")
     parsed = parser.parse_args(args)
@@ -27,17 +30,21 @@ def cmd_install(args: list[str], install_dir: str | None = None):
     if parsed.plugin_only:
         return
 
+    all_agents = get_all_agents()
+
     if parsed.agents:
         slugs = [s.strip() for s in parsed.agents.split(",")]
         selected = [a for s in slugs if (a := get_agent_by_slug(s))]
         if not selected:
             print(f"No matching agents found for: {parsed.agents}")
             return
-    else:
+    elif parsed.all_agents:
         selected = detected_agents()
+    else:
+        detected = set(detected_agents())
+        selected = select_agents_interactive(all_agents, preselected=detected)
 
     if not selected:
-        print("No agents detected")
         return
 
     print()
