@@ -1,3 +1,5 @@
+#:schema: https://www.schemastore.org/prek.json
+
 [[repos]]
 repo = "builtin"
 hooks = [
@@ -11,24 +13,18 @@ hooks = [
 
 [[repos]]
 repo = "local"
-
 [[repos.hooks]]
 id = "ruff-check"
 name = "ruff check"
-entry = "ruff check --fix"
+entry = "uvx ruff check ."
 language = "system"
 types = ["python"]
+pass_filenames = false
 
 [[repos.hooks]]
 id = "ruff-format"
 name = "ruff format"
-entry = "ruff format"
+entry = "uvx ruff format --check ."
 language = "system"
 types = ["python"]
-
-[[repos.hooks]]
-id = "rumdl"
-name = "rumdl"
-entry = "rumdl check"
-language = "system"
-types = ["markdown"]
+pass_filenames = false
