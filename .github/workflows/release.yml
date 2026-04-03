@@ -3,6 +3,13 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (skip publish)"
+        required: false
+        default: "false"
+        type: boolean
 
 jobs:
   publish:
@@ -13,4 +20,6 @@ jobs:
       - run: make lint
       - run: make test
       - run: make build
-      - run: uv publish --token ${{ secrets.PYPI_TOKEN }}
+      - name: Publish to PyPI
+        if: ${{ !inputs.dry_run }}
+        run: uv publish --token ${{ secrets.PYPI_TOKEN }}
