@@ -56,13 +56,17 @@ class CallbackModule(CallbackBase):
             before = diff.get("before", "")
             after = diff.get("after", "")
             if before and after:
-                diff_lines = list(difflib.unified_diff(
-                    str(before).splitlines(),
-                    str(after).splitlines(),
-                    lineterm="",
-                ))
+                diff_lines = list(
+                    difflib.unified_diff(
+                        str(before).splitlines(),
+                        str(after).splitlines(),
+                        lineterm="",
+                    )
+                )
                 for line in diff_lines:
-                    if line.startswith(("+", "-")) and not line.startswith(("+++", "---")):
+                    if line.startswith(("+", "-")) and not line.startswith(
+                        ("+++", "---")
+                    ):
                         return line
         elif isinstance(diff, list):
             for d in diff:

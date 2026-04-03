@@ -6,9 +6,15 @@ import shutil
 import sys
 import tempfile
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from ansible_agent_callback.agents import claude_code, codex_cli, gemini_cli, shell, ansible_cfg
+from ansible_agent_callback.agents import (
+    claude_code,
+    codex_cli,
+    gemini_cli,
+    shell,
+    ansible_cfg,
+)
 
 ENV_KEY = "ANSIBLE_STDOUT_CALLBACK"
 ENV_VAL = "agent"
@@ -109,7 +115,7 @@ class TestCodexCli:
         codex_cli._configure(self.config_path)
         with open(self.config_path) as f:
             content = f.read()
-        assert 'ANSIBLE_STDOUT_CALLBACK' in content
+        assert "ANSIBLE_STDOUT_CALLBACK" in content
         assert '"agent"' in content
 
     def test_configure_appends_to_existing(self):
@@ -119,14 +125,14 @@ class TestCodexCli:
         with open(self.config_path) as f:
             content = f.read()
         assert 'name = "gpt-4"' in content
-        assert 'ANSIBLE_STDOUT_CALLBACK' in content
+        assert "ANSIBLE_STDOUT_CALLBACK" in content
 
     def test_configure_is_idempotent(self):
         codex_cli._configure(self.config_path)
         codex_cli._configure(self.config_path)
         with open(self.config_path) as f:
             content = f.read()
-        assert content.count('ANSIBLE_STDOUT_CALLBACK') == 1
+        assert content.count("ANSIBLE_STDOUT_CALLBACK") == 1
 
     def test_is_configured_true(self):
         codex_cli._configure(self.config_path)
@@ -140,7 +146,7 @@ class TestCodexCli:
         codex_cli._unconfigure(self.config_path)
         with open(self.config_path) as f:
             content = f.read()
-        assert 'ANSIBLE_STDOUT_CALLBACK' not in content
+        assert "ANSIBLE_STDOUT_CALLBACK" not in content
 
 
 class TestGeminiCli:

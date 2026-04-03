@@ -5,7 +5,7 @@ import sys
 import shutil
 import tempfile
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from ansible_agent_callback import installer
 
