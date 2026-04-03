@@ -1,5 +1,7 @@
 # ansible-agent-callback
 
+[![codecov](https://codecov.io/gh/rvben/ansible-agent-callback/graph/badge.svg)](https://codecov.io/gh/rvben/ansible-agent-callback)
+
 Token-optimized Ansible stdout callback plugin for AI coding agents.
 Reduces output by 70-90% compared to the default callback.
 
