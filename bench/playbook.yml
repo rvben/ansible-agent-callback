@@ -1,0 +1,92 @@
+---
+# Mixed-shape playbook for bench/run.py.
+# Stays hermetic: localhost only, /tmp scratch, ignored failures.
+# Roughly mirrors what a real run looks like: a few changes, a lot of
+# unchanged tasks, some skipped, some loops, one failure.
+
+- name: Configure webservers (success path)
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Set worker count
+      ansible.builtin.set_fact:
+        workers: 4
+
+    - name: Set listen port
+      ansible.builtin.set_fact:
+        listen_port: 443
+
+    - name: Print greeting
+      ansible.builtin.debug:
+        msg: "Hello from web01"
+
+    - name: Print second greeting
+      ansible.builtin.debug:
+        msg: "Configuring with {{ workers }} workers on port {{ listen_port }}"
+
+    - name: Conditional staging-only task
+      ansible.builtin.debug:
+        msg: "staging only"
+      when: env | default('prod') == 'staging'
+
+    - name: Conditional debug-only task
+      ansible.builtin.debug:
+        msg: "debug only"
+      when: false
+
+    - name: Install packages (loop)
+      ansible.builtin.debug:
+        msg: "Installing {{ item }}"
+      loop:
+        - nginx
+        - postgresql
+        - redis
+        - memcached
+
+    - name: Skipped loop items
+      ansible.builtin.debug:
+        msg: "would install {{ item }}"
+      loop:
+        - one
+        - two
+      when: false
+
+    - name: Create scratch file (changed)
+      ansible.builtin.copy:
+        dest: /tmp/ansible-agent-bench-scratch
+        content: "workers={{ workers }}\nlisten={{ listen_port }}\n"
+        mode: "0644"
+
+    - name: Update scratch file (changed with diff)
+      ansible.builtin.copy:
+        dest: /tmp/ansible-agent-bench-scratch
+        content: "workers=8\nlisten=443\n"
+        mode: "0644"
+
+    - name: Touch unchanged file
+      ansible.builtin.file:
+        path: /tmp/ansible-agent-bench-scratch
+        state: file
+
+    - name: Cleanup scratch file
+      ansible.builtin.file:
+        path: /tmp/ansible-agent-bench-scratch
+        state: absent
+
+- name: Run with ignored failures (failure path)
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Healthy task
+      ansible.builtin.debug:
+        msg: "still ok"
+
+    - name: Ignored failure
+      ansible.builtin.fail:
+        msg: "expected demo failure"
+      ignore_errors: true
+
+    - name: Ignored command failure
+      ansible.builtin.command: /usr/bin/false
+      ignore_errors: true
+      changed_when: false

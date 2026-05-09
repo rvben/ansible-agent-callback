@@ -2,7 +2,7 @@ PLUGIN_NAME := agent
 PLUGIN_SRC := callback_plugins/$(PLUGIN_NAME).py
 INSTALL_DIR := $(HOME)/.ansible/plugins/callback
 
-.PHONY: install uninstall test lint fmt build dev
+.PHONY: install uninstall test lint fmt build dev bench
 
 install: $(PLUGIN_SRC)
 	@mkdir -p $(INSTALL_DIR)
@@ -31,3 +31,6 @@ build:
 
 dev:
 	uv pip install -e .
+
+bench:
+	uv run --with ansible-core python bench/run.py
