@@ -7,12 +7,25 @@ Token-optimized Ansible stdout callback plugin for AI coding agents.
 Compression is asymmetric on purpose:
 
 - **Success path:** aggressive — clean runs collapse to a single `RECAP`
-  line; ok and skipped tasks produce zero output. ~70-90% reduction
-  vs the default callback.
+  line; ok and skipped tasks produce zero output.
 - **Failure path:** readable — full stack traces stay intact via
   `msg> ` / `stderr> ` continuation lines, plus `rc` and a `HINT`
   pointing at `ANSIBLE_LOG_PATH` for the full log. Still smaller than
   default, but optimized for diagnosis over byte count.
+
+Measured reduction on a mixed-shape fixture (12 ok, 3 changed, 3 skipped,
+2 ignored failures, 1 loop) — see [`bench/`](bench/) and run `make bench`
+to reproduce:
+
+| Metric | default | agent | Reduction |
+|--------|---------|-------|-----------|
+| bytes  | 3,174   | 499   | **84.3%** |
+| lines  | 90      | 15    | **83.3%** |
+| words  | 286     | 79    | **72.4%** |
+
+Clean runs (zero changes, zero failures) collapse to a single line
+regardless of task count, so the reduction approaches the default's
+total volume the larger your playbook.
 
 ## Getting Started
 
@@ -133,5 +146,6 @@ ansible-agent-callback env                  # Print export for other agents
 ```bash
 make dev    # Install in editable mode
 make test   # Run tests
+make bench  # Compare default vs agent callback output volume
 make build  # Build package
 ```
