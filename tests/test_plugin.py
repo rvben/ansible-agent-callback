@@ -633,3 +633,72 @@ class TestRecapHint:
         lines = displayed_text(plugin)
         assert lines[0].startswith("RECAP | ")
         assert lines[1].startswith("HINT | ")
+
+
+class TestTokenEfficiency:
+    """Structural assertions on the compression contract.
+
+    These pin the project's core promise — that agent token usage stays
+    bounded — by asserting per-event output line counts for representative
+    scenarios. If a future change leaks output, these break first.
+    """
+
+    def test_hundred_ok_unchanged_emits_zero_lines(self):
+        plugin = make_plugin()
+        for _ in range(100):
+            plugin.v2_runner_on_ok(make_result(host="web01", changed=False))
+        assert displayed_text(plugin) == []
+
+    def test_hundred_skipped_emits_zero_lines(self):
+        plugin = make_plugin()
+        for _ in range(100):
+            plugin.v2_runner_on_skipped(make_result(host="web01"))
+        assert displayed_text(plugin) == []
+
+    def test_changed_is_exactly_one_line_per_result(self):
+        plugin = make_plugin()
+        for i in range(50):
+            plugin.v2_runner_on_ok(make_result(host=f"web{i:02d}", changed=True))
+        assert len(displayed_text(plugin)) == 50
+
+    def test_failure_block_line_count_matches_stderr_line_count(self):
+        # An N-line stderr should produce exactly N output lines:
+        # 1 lead + (N-1) continuations. No amplification.
+        plugin = make_plugin()
+        stderr = "\n".join(f"line{i}" for i in range(20))
+        result = make_result(host="db01", stderr=stderr)
+        plugin.v2_runner_on_failed(result, ignore_errors=False)
+        assert len(displayed_text(plugin)) == 20
+
+    def test_clean_run_collapses_to_single_recap_line(self, monkeypatch):
+        # The headline promise: a fully successful playbook = 1 line.
+        monkeypatch.setenv("ANSIBLE_LOG_PATH", "")
+        plugin = make_plugin()
+        for _ in range(50):
+            plugin.v2_runner_on_ok(make_result(host="web01", changed=False))
+            plugin.v2_runner_on_skipped(make_result(host="web01"))
+        stats = MagicMock()
+        stats.processed = {"web01": {}}
+        stats.summarize.return_value = {
+            "ok": 50,
+            "changed": 0,
+            "unreachable": 0,
+            "failures": 0,
+            "skipped": 50,
+            "rescued": 0,
+            "ignored": 0,
+        }
+        plugin.v2_playbook_on_stats(stats)
+        assert len(displayed_text(plugin)) == 1
+        assert displayed_text(plugin)[0].startswith("RECAP | ")
+
+    def test_continuation_prefix_is_minimal(self):
+        # Every byte counts on the failure path. The prefix must not creep
+        # back to a leading-indent form like "  msg> " (5 extra bytes/line).
+        plugin = make_plugin()
+        result = make_result(host="db01", msg="a\nb\nc")
+        plugin.v2_runner_on_failed(result, ignore_errors=False)
+        for line in displayed_text(plugin)[1:]:
+            assert line.startswith(("msg> ", "stderr> ")), (
+                f"continuation line gained extra prefix: {line!r}"
+            )
