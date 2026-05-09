@@ -13,9 +13,13 @@ DOCUMENTATION = """
         - Only changed, failed, and unreachable results are shown
         - Skipped tasks and ok results are hidden entirely
         - RECAP line always shown with non-zero counts
+        - HINT line is appended after RECAP when failures or unreachable hosts
+          occurred and ANSIBLE_LOG_PATH is unset, pointing at the full-log
+          escape hatch
 """
 
 import difflib
+import os
 
 from ansible.plugins.callback import CallbackBase
 
@@ -174,6 +178,7 @@ class CallbackModule(CallbackBase):
     def v2_playbook_on_stats(self, stats):
         hosts = sorted(stats.processed.keys())
         host_summaries = []
+        has_problems = False
         for host in hosts:
             s = stats.summarize(host)
             counts = {
@@ -185,6 +190,8 @@ class CallbackModule(CallbackBase):
                 "rescued": s.get("rescued", 0),
                 "ignored": s.get("ignored", 0),
             }
+            if counts["failed"] or counts["unreachable"]:
+                has_problems = True
             parts = [f"{k}={v}" for k, v in counts.items() if v > 0]
             if parts:
                 host_summaries.append(f"{host}: {' '.join(parts)}")
@@ -192,3 +199,9 @@ class CallbackModule(CallbackBase):
                 host_summaries.append(f"{host}: ok=0")
 
         self._emit("RECAP | " + " | ".join(host_summaries))
+
+        # Surface the escape hatch only when the agent will actually need it:
+        # something failed and the user hasn't already opted into full logging.
+        # Empty string matches Ansible's own "logging disabled" semantics.
+        if has_problems and not os.environ.get("ANSIBLE_LOG_PATH"):
+            self._emit("HINT | set ANSIBLE_LOG_PATH=<path> and re-run for full output")

@@ -325,7 +325,10 @@ class TestRecap:
         assert len(lines) == 1
         assert lines[0] == "RECAP | web01: ok=3 changed=1 skipped=2"
 
-    def test_multi_host_recap(self):
+    def test_multi_host_recap(self, monkeypatch):
+        # Pin ANSIBLE_LOG_PATH so this test stays focused on RECAP formatting,
+        # not on the conditional HINT line (covered in TestRecapHint).
+        monkeypatch.setenv("ANSIBLE_LOG_PATH", "/tmp/ansible.log")
         plugin = make_plugin()
         stats = MagicMock()
         stats.processed = {"web01": {}, "db01": {}}
@@ -377,3 +380,72 @@ class TestRecap:
         plugin.v2_playbook_on_stats(stats)
         lines = displayed_text(plugin)
         assert lines[0] == "RECAP | web01: ok=5"
+
+
+class TestRecapHint:
+    """HINT line surfaces the ANSIBLE_LOG_PATH escape hatch only when failures
+    occurred and the user has not already opted in by setting the env var."""
+
+    def _stats_with(self, **counts):
+        defaults = {
+            "ok": 0,
+            "changed": 0,
+            "unreachable": 0,
+            "failures": 0,
+            "skipped": 0,
+            "rescued": 0,
+            "ignored": 0,
+        }
+        defaults.update(counts)
+        stats = MagicMock()
+        stats.processed = {"db01": {}}
+        stats.summarize.return_value = defaults
+        stats.custom = {}
+        return stats
+
+    def test_hint_emitted_on_failures_when_log_path_unset(self, monkeypatch):
+        monkeypatch.delenv("ANSIBLE_LOG_PATH", raising=False)
+        plugin = make_plugin()
+        plugin.v2_playbook_on_stats(self._stats_with(ok=1, failures=1))
+        lines = displayed_text(plugin)
+        assert any(line.startswith("HINT | ") for line in lines)
+        assert any("ANSIBLE_LOG_PATH" in line for line in lines)
+
+    def test_hint_emitted_on_unreachable_when_log_path_unset(self, monkeypatch):
+        monkeypatch.delenv("ANSIBLE_LOG_PATH", raising=False)
+        plugin = make_plugin()
+        plugin.v2_playbook_on_stats(self._stats_with(unreachable=1))
+        lines = displayed_text(plugin)
+        assert any(line.startswith("HINT | ") for line in lines)
+
+    def test_hint_not_emitted_when_log_path_set(self, monkeypatch):
+        monkeypatch.setenv("ANSIBLE_LOG_PATH", "/tmp/ansible.log")
+        plugin = make_plugin()
+        plugin.v2_playbook_on_stats(self._stats_with(ok=1, failures=1))
+        lines = displayed_text(plugin)
+        assert not any(line.startswith("HINT | ") for line in lines)
+
+    def test_hint_emitted_when_log_path_empty_string(self, monkeypatch):
+        # Empty string matches Ansible's own semantics for "logging disabled" —
+        # treat as unset so the agent still sees the escape hatch.
+        monkeypatch.setenv("ANSIBLE_LOG_PATH", "")
+        plugin = make_plugin()
+        plugin.v2_playbook_on_stats(self._stats_with(ok=1, failures=1))
+        lines = displayed_text(plugin)
+        assert any(line.startswith("HINT | ") for line in lines)
+
+    def test_hint_not_emitted_on_clean_run(self, monkeypatch):
+        monkeypatch.delenv("ANSIBLE_LOG_PATH", raising=False)
+        plugin = make_plugin()
+        plugin.v2_playbook_on_stats(self._stats_with(ok=5, changed=1))
+        lines = displayed_text(plugin)
+        assert not any(line.startswith("HINT | ") for line in lines)
+        assert len(lines) == 1  # just RECAP
+
+    def test_hint_emitted_after_recap(self, monkeypatch):
+        monkeypatch.delenv("ANSIBLE_LOG_PATH", raising=False)
+        plugin = make_plugin()
+        plugin.v2_playbook_on_stats(self._stats_with(ok=1, failures=1))
+        lines = displayed_text(plugin)
+        assert lines[0].startswith("RECAP | ")
+        assert lines[1].startswith("HINT | ")
