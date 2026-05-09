@@ -226,20 +226,60 @@ class TestRunnerFailed:
             plugin
         )
 
-    def test_failed_multiline_msg_joined(self):
+    def test_failed_multiline_msg_emits_continuation(self):
         plugin = make_plugin()
         result = make_result(host="db01", msg="line1\nline2\nline3")
         plugin.v2_runner_on_failed(result, ignore_errors=False)
-        assert r"failed | db01 | msg: line1\nline2\nline3" in displayed_text(plugin)
+        assert displayed_text(plugin) == [
+            "failed | db01 | msg: line1",
+            "msg> line2",
+            "msg> line3",
+        ]
 
-    def test_failed_multiline_stderr_joined(self):
+    def test_failed_multiline_stderr_emits_continuation(self):
         plugin = make_plugin()
         result = make_result(host="db01", msg="failed", stderr="err1\nerr2\nerr3")
         plugin.v2_runner_on_failed(result, ignore_errors=False)
-        assert (
-            r"failed | db01 | msg: failed | stderr: err1\nerr2\nerr3"
-            in displayed_text(plugin)
+        assert displayed_text(plugin) == [
+            "failed | db01 | msg: failed | stderr: err1",
+            "stderr> err2",
+            "stderr> err3",
+        ]
+
+    def test_failed_both_multiline_msg_continuations_before_stderr(self):
+        plugin = make_plugin()
+        result = make_result(host="db01", msg="m1\nm2", stderr="s1\ns2\ns3")
+        plugin.v2_runner_on_failed(result, ignore_errors=False)
+        assert displayed_text(plugin) == [
+            "failed | db01 | msg: m1 | stderr: s1",
+            "msg> m2",
+            "stderr> s2",
+            "stderr> s3",
+        ]
+
+    def test_failed_multiline_preserves_indented_lines(self):
+        # Stack traces rely on leading whitespace surviving the continuation prefix.
+        traceback = (
+            "Traceback (most recent call last):\n"
+            '  File "/x", line 5, in <module>\n'
+            "    do_thing()\n"
+            "RuntimeError: oops"
         )
+        plugin = make_plugin()
+        result = make_result(host="db01", stderr=traceback)
+        plugin.v2_runner_on_failed(result, ignore_errors=False)
+        assert displayed_text(plugin) == [
+            "failed | db01 | stderr: Traceback (most recent call last):",
+            'stderr>   File "/x", line 5, in <module>',
+            "stderr>     do_thing()",
+            "stderr> RuntimeError: oops",
+        ]
+
+    def test_failed_strips_trailing_newline_no_phantom_continuation(self):
+        plugin = make_plugin()
+        result = make_result(host="db01", msg="single line\n")
+        plugin.v2_runner_on_failed(result, ignore_errors=False)
+        assert displayed_text(plugin) == ["failed | db01 | msg: single line"]
 
     def test_failed_with_rc_only(self):
         plugin = make_plugin()
@@ -247,6 +287,42 @@ class TestRunnerFailed:
         result.result["rc"] = 1
         plugin.v2_runner_on_failed(result, ignore_errors=False)
         assert "failed | db01 | rc: 1" in displayed_text(plugin)
+
+    def test_failed_emits_rc_alongside_msg(self):
+        # rc must surface even when msg/stderr are present — exit codes are
+        # diagnostic signal an agent can't recover from a sanitized message.
+        plugin = make_plugin()
+        result = make_result(host="db01", msg="killed")
+        result.result["rc"] = 137
+        plugin.v2_runner_on_failed(result, ignore_errors=False)
+        assert "failed | db01 | msg: killed | rc: 137" in displayed_text(plugin)
+
+    def test_failed_emits_rc_alongside_stderr(self):
+        plugin = make_plugin()
+        result = make_result(host="db01", stderr="boom")
+        result.result["rc"] = 2
+        plugin.v2_runner_on_failed(result, ignore_errors=False)
+        assert "failed | db01 | stderr: boom | rc: 2" in displayed_text(plugin)
+
+    def test_failed_emits_rc_alongside_msg_and_stderr(self):
+        plugin = make_plugin()
+        result = make_result(host="db01", msg="oops", stderr="err detail")
+        result.result["rc"] = 1
+        plugin.v2_runner_on_failed(result, ignore_errors=False)
+        assert (
+            "failed | db01 | msg: oops | stderr: err detail | rc: 1"
+            in displayed_text(plugin)
+        )
+
+    def test_failed_multiline_with_rc(self):
+        plugin = make_plugin()
+        result = make_result(host="db01", stderr="err1\nerr2")
+        result.result["rc"] = 1
+        plugin.v2_runner_on_failed(result, ignore_errors=False)
+        assert displayed_text(plugin) == [
+            "failed | db01 | stderr: err1 | rc: 1",
+            "stderr> err2",
+        ]
 
     def test_failed_ignore_errors(self):
         plugin = make_plugin()
@@ -256,6 +332,24 @@ class TestRunnerFailed:
         assert "failed | db01 | msg: expected failure" in lines
         assert "...ignoring" in lines
 
+    def test_failed_ignore_errors_ordering_after_continuations(self):
+        # ...ignoring must come after the failure block (lead + continuations)
+        # so an agent reading top-down sees the full failure before the marker.
+        plugin = make_plugin()
+        result = make_result(host="db01", msg="line1\nline2")
+        plugin.v2_runner_on_failed(result, ignore_errors=True)
+        assert displayed_text(plugin) == [
+            "failed | db01 | msg: line1",
+            "msg> line2",
+            "...ignoring",
+        ]
+
+    def test_failed_no_details(self):
+        plugin = make_plugin()
+        result = make_result(host="db01")
+        plugin.v2_runner_on_failed(result, ignore_errors=False)
+        assert "failed | db01 | msg: (no details)" in displayed_text(plugin)
+
 
 class TestRunnerUnreachable:
     def test_unreachable(self):
@@ -263,6 +357,23 @@ class TestRunnerUnreachable:
         result = make_result(host="db01", msg="SSH connection timeout")
         plugin.v2_runner_on_unreachable(result)
         assert "unreachable | db01 | SSH connection timeout" in displayed_text(plugin)
+
+    def test_unreachable_multiline_emits_continuation(self):
+        plugin = make_plugin()
+        result = make_result(
+            host="db01", msg="SSH timeout\nfatal: unable to reach host"
+        )
+        plugin.v2_runner_on_unreachable(result)
+        assert displayed_text(plugin) == [
+            "unreachable | db01 | SSH timeout",
+            "msg> fatal: unable to reach host",
+        ]
+
+    def test_unreachable_no_msg(self):
+        plugin = make_plugin()
+        result = make_result(host="db01")
+        plugin.v2_runner_on_unreachable(result)
+        assert displayed_text(plugin) == ["unreachable | db01"]
 
 
 class TestRunnerSkipped:
@@ -294,6 +405,26 @@ class TestLoopItems:
         result.result["item"] = "badpkg"
         plugin.v2_runner_item_on_failed(result)
         assert "failed | web01 | item: badpkg | msg: not found" in displayed_text(
+            plugin
+        )
+
+    def test_item_failed_multiline_emits_continuation(self):
+        plugin = make_plugin()
+        result = make_result(host="web01", stderr="err1\nerr2")
+        result.result["item"] = "badpkg"
+        plugin.v2_runner_item_on_failed(result)
+        assert displayed_text(plugin) == [
+            "failed | web01 | item: badpkg | stderr: err1",
+            "stderr> err2",
+        ]
+
+    def test_item_failed_emits_rc(self):
+        plugin = make_plugin()
+        result = make_result(host="web01", msg="bad pkg")
+        result.result["item"] = "badpkg"
+        result.result["rc"] = 1
+        plugin.v2_runner_item_on_failed(result)
+        assert "failed | web01 | item: badpkg | msg: bad pkg | rc: 1" in displayed_text(
             plugin
         )
 

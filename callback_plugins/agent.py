@@ -9,9 +9,12 @@ DOCUMENTATION = """
     version_added: "1.0"
     description:
         - Minimal, pipe-delimited output designed to reduce token usage
-        - One line per event, no color codes, no decorative banners
         - Only changed, failed, and unreachable results are shown
         - Skipped tasks and ok results are hidden entirely
+        - Failures inline a single-line summary on the lead line and emit
+          additional content as continuation lines prefixed with "msg> "
+          or "stderr> " — stack traces and multi-line errors stay readable
+        - rc is always emitted on failure when present, alongside any msg/stderr
         - RECAP line always shown with non-zero counts
         - HINT line is appended after RECAP when failures or unreachable hosts
           occurred and ANSIBLE_LOG_PATH is unset, pointing at the full-log
@@ -79,11 +82,17 @@ class CallbackModule(CallbackBase):
                     return summary
         return None
 
-    def _sanitize(self, text):
-        """Replace newlines with literal \\n for single-line output."""
+    def _split_lines(self, text):
+        """Strip and split text into a list of lines.
+
+        Returns ``[]`` for empty/whitespace-only input. Trailing whitespace is
+        stripped first so a single trailing newline doesn't produce a phantom
+        continuation line. Inner whitespace is preserved so indented stack
+        trace frames survive intact.
+        """
         if not text:
-            return text
-        return str(text).replace("\n", r"\n").replace("\r", r"\r")
+            return []
+        return str(text).strip().splitlines()
 
     def v2_runner_on_ok(self, result):
         # Suppress post-loop aggregate line
@@ -106,21 +115,23 @@ class CallbackModule(CallbackBase):
                 parts.append(f"diff: {summary}")
         self._emit(" | ".join(parts))
 
-    def v2_runner_on_failed(self, result, ignore_errors=False):
-        self._flush_task_banner()
-        host = result.host.get_name()
-        parts = [f"failed | {host}"]
+    def _emit_failure(self, lead_prefix, result):
+        """Emit a failure block: lead line plus optional continuation lines.
 
-        msg = result.result.get("msg")
-        if msg:
-            parts.append(f"msg: {self._sanitize(msg)}")
-
-        stderr = result.result.get("stderr")
-        if stderr:
-            parts.append(f"stderr: {self._sanitize(stderr)}")
-
+        ``lead_prefix`` already contains everything up to (but not including)
+        the first appended msg/stderr/rc field — e.g. ``failed | db01`` or
+        ``failed | web01 | item: badpkg``.
+        """
+        msg_lines = self._split_lines(result.result.get("msg"))
+        stderr_lines = self._split_lines(result.result.get("stderr"))
         rc = result.result.get("rc")
-        if rc is not None and len(parts) == 1:
+
+        parts = [lead_prefix]
+        if msg_lines:
+            parts.append(f"msg: {msg_lines[0]}")
+        if stderr_lines:
+            parts.append(f"stderr: {stderr_lines[0]}")
+        if rc is not None:
             parts.append(f"rc: {rc}")
 
         if len(parts) == 1:
@@ -128,14 +139,28 @@ class CallbackModule(CallbackBase):
 
         self._emit(" | ".join(parts))
 
+        for line in msg_lines[1:]:
+            self._emit(f"msg> {line}")
+        for line in stderr_lines[1:]:
+            self._emit(f"stderr> {line}")
+
+    def v2_runner_on_failed(self, result, ignore_errors=False):
+        self._flush_task_banner()
+        host = result.host.get_name()
+        self._emit_failure(f"failed | {host}", result)
         if ignore_errors:
             self._emit("...ignoring")
 
     def v2_runner_on_unreachable(self, result):
         self._flush_task_banner()
         host = result.host.get_name()
-        msg = self._sanitize(result.result.get("msg", ""))
-        self._emit(f"unreachable | {host} | {msg}")
+        msg_lines = self._split_lines(result.result.get("msg"))
+        if not msg_lines:
+            self._emit(f"unreachable | {host}")
+            return
+        self._emit(f"unreachable | {host} | {msg_lines[0]}")
+        for line in msg_lines[1:]:
+            self._emit(f"msg> {line}")
 
     def v2_runner_on_skipped(self, result):
         pass
@@ -160,17 +185,7 @@ class CallbackModule(CallbackBase):
         self._flush_task_banner()
         host = result.host.get_name()
         item = self._get_item_label(result.result)
-        parts = [f"failed | {host} | item: {item}"]
-
-        msg = result.result.get("msg")
-        if msg:
-            parts.append(f"msg: {self._sanitize(msg)}")
-
-        stderr = result.result.get("stderr")
-        if stderr:
-            parts.append(f"stderr: {self._sanitize(stderr)}")
-
-        self._emit(" | ".join(parts))
+        self._emit_failure(f"failed | {host} | item: {item}", result)
 
     def v2_runner_item_on_skipped(self, result):
         pass
