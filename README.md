@@ -3,6 +3,7 @@
 [![codecov](https://codecov.io/gh/rvben/ansible-agent-callback/graph/badge.svg)](https://codecov.io/gh/rvben/ansible-agent-callback)
 
 Token-optimized Ansible stdout callback plugin for AI coding agents.
+**Reduces output by 70-90%** compared to the default callback.
 
 Compression is asymmetric on purpose:
 
@@ -13,9 +14,9 @@ Compression is asymmetric on purpose:
   pointing at `ANSIBLE_LOG_PATH` for the full log. Still smaller than
   default, but optimized for diagnosis over byte count.
 
-Measured reduction on a mixed-shape fixture (12 ok, 3 changed, 3 skipped,
-2 ignored failures, 1 loop) — see [`bench/`](bench/) and run `make bench`
-to reproduce:
+Verified on a mixed-shape fixture (12 ok, 3 changed, 3 skipped, 2 ignored
+failures, 1 loop) — see [`bench/`](bench/) and run `make bench` to
+reproduce:
 
 | Metric | default | agent | Reduction |
 |--------|---------|-------|-----------|
