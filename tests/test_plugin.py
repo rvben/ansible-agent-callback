@@ -182,13 +182,66 @@ class TestRunnerOk:
         plugin.v2_runner_on_ok(result)
         assert "changed | web01" in displayed_text(plugin)
 
-    def test_ok_changed_with_diff(self):
+    def test_ok_changed_with_diff_single_line(self):
+        # Single-line replace: no totals, the change is self-explanatory.
         plugin = make_plugin()
         diff = {"before": "workers 2\n", "after": "workers 4\n"}
         result = make_result(host="web01", changed=True, diff=diff)
         plugin.v2_runner_on_ok(result)
+        assert "changed | web01 | diff: -workers 2" in displayed_text(plugin)
+
+    def test_ok_changed_with_diff_multiline_appends_totals(self):
+        # Multi-line change: include (+N -M) so the agent knows there's more
+        # context than the single representative line.
+        plugin = make_plugin()
+        diff = {
+            "before": "a\nb\nc\n",
+            "after": "a\nB\nC\nD\n",
+        }
+        result = make_result(host="web01", changed=True, diff=diff)
+        plugin.v2_runner_on_ok(result)
         lines = displayed_text(plugin)
-        assert any("changed | web01 | diff: -workers 2" in line for line in lines)
+        assert any(
+            "changed | web01 | diff:" in line and "(+3 -2)" in line for line in lines
+        )
+
+    def test_ok_changed_with_diff_skips_comment_changes(self):
+        # First non-comment change wins — `# old` removal is misleading when
+        # the real edit is a config value change buried below.
+        plugin = make_plugin()
+        diff = {
+            "before": "# old comment\nworkers 2\n",
+            "after": "workers 4\n",
+        }
+        result = make_result(host="web01", changed=True, diff=diff)
+        plugin.v2_runner_on_ok(result)
+        lines = displayed_text(plugin)
+        assert any("diff: -workers 2" in line for line in lines)
+        assert not any("diff: -# old comment" in line for line in lines)
+
+    def test_ok_changed_with_diff_falls_back_when_only_comments_change(self):
+        # If every change is a comment, the comment is what changed — show it.
+        plugin = make_plugin()
+        diff = {
+            "before": "# old comment\nworkers 4\n",
+            "after": "# new comment\nworkers 4\n",
+        }
+        result = make_result(host="web01", changed=True, diff=diff)
+        plugin.v2_runner_on_ok(result)
+        lines = displayed_text(plugin)
+        assert any("diff: -# old comment" in line for line in lines)
+
+    def test_ok_changed_with_diff_skips_ini_style_comments(self):
+        # INI/conf files use ; for comments — same heuristic should apply.
+        plugin = make_plugin()
+        diff = {
+            "before": "; legacy note\nport=80\n",
+            "after": "port=443\n",
+        }
+        result = make_result(host="web01", changed=True, diff=diff)
+        plugin.v2_runner_on_ok(result)
+        lines = displayed_text(plugin)
+        assert any("diff: -port=80" in line for line in lines)
 
     def test_post_loop_aggregate_suppressed(self):
         plugin = make_plugin()

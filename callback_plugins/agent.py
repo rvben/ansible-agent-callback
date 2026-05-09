@@ -56,31 +56,63 @@ class CallbackModule(CallbackBase):
         self._emit(f"HANDLER | {name}")
 
     def _format_diff_summary(self, diff):
-        """Extract first meaningful changed line from diff data."""
+        """Pick a representative change line and append totals when relevant.
+
+        Comment-only changes (lines starting with ``#`` or ``;`` after the
+        diff marker) get skipped when picking the representative line so an
+        agent doesn't draw conclusions from a comment removal while the real
+        edit is buried below. If every change is a comment, the first comment
+        change is shown as fallback.
+
+        Totals ``(+N -M)`` are appended when the diff spans multiple changed
+        lines on either side — they signal "there's more" without forcing the
+        agent to read the full diff.
+        """
         if not diff:
             return None
-        if isinstance(diff, dict):
-            before = diff.get("before", "")
-            after = diff.get("after", "")
-            if before and after:
-                diff_lines = list(
-                    difflib.unified_diff(
-                        str(before).splitlines(),
-                        str(after).splitlines(),
-                        lineterm="",
-                    )
-                )
-                for line in diff_lines:
-                    if line.startswith(("+", "-")) and not line.startswith(
-                        ("+++", "---")
-                    ):
-                        return line
-        elif isinstance(diff, list):
+        if isinstance(diff, list):
             for d in diff:
                 summary = self._format_diff_summary(d)
                 if summary:
                     return summary
-        return None
+            return None
+        if not isinstance(diff, dict):
+            return None
+
+        before = diff.get("before", "")
+        after = diff.get("after", "")
+        if not (before and after):
+            return None
+
+        plus = minus = 0
+        first_change = None
+        first_non_comment = None
+        for line in difflib.unified_diff(
+            str(before).splitlines(),
+            str(after).splitlines(),
+            lineterm="",
+        ):
+            if line.startswith(("+++", "---")):
+                continue
+            if line.startswith("+"):
+                plus += 1
+            elif line.startswith("-"):
+                minus += 1
+            else:
+                continue
+            if first_change is None:
+                first_change = line
+            if first_non_comment is None and not line[1:].lstrip().startswith(
+                ("#", ";")
+            ):
+                first_non_comment = line
+
+        representative = first_non_comment or first_change
+        if representative is None:
+            return None
+        if plus > 1 or minus > 1:
+            return f"{representative} (+{plus} -{minus})"
+        return representative
 
     def _split_lines(self, text):
         """Strip and split text into a list of lines.
