@@ -20,6 +20,17 @@ jobs:
       - run: make lint
       - run: make test
       - run: make build
+      - name: Check whether version is already on PyPI
+        id: ver
+        run: |
+          VERSION=$(grep -m1 '^version' pyproject.toml | sed -E 's/.*"(.*)".*/\1/')
+          if curl -sf "https://pypi.org/pypi/ansible-agent-callback/${VERSION}/json" >/dev/null 2>&1; then
+            echo "Version ${VERSION} already published; skipping publish."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Version ${VERSION} not on PyPI; will publish."
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Publish to PyPI
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && steps.ver.outputs.exists == 'false' }}
         run: uv publish --token ${{ secrets.PYPI_TOKEN }}
