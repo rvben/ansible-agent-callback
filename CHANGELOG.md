@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and
 tracking starts at the current release.
 
+
+## [0.3.2](https://github.com/rvben/ansible-agent-callback/compare/v0.3.1...v0.3.2) - 2026-07-01
+
+### Added
+
+- capture full failure detail to a companion file ([cac582b](https://github.com/rvben/ansible-agent-callback/commit/cac582bb479473e4cc37b15b25f2af548a6d1cfa))
+
 ## [0.3.1] - 2026-03-28
 
 Token-optimized Ansible stdout callback plugin for AI coding agents, reducing

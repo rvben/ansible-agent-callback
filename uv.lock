@@ -1,0 +1,8 @@
+version = 1
+revision = 1
+requires-python = ">=3.11"
+
+[[package]]
+name = "ansible-agent-callback"
+version = "0.3.2"
+source = { editable = "." }
