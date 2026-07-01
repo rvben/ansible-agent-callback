@@ -1,8 +1,11 @@
 """Tests for the agent callback plugin."""
 
+import json
 import sys
 import os
 from unittest.mock import MagicMock
+
+import pytest
 
 # Support both callback_plugins (local dev) and src layout
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "callback_plugins"))
@@ -14,6 +17,17 @@ try:
     import agent as _module
 except ImportError:
     import plugin as _module
+
+
+@pytest.fixture(autouse=True)
+def _no_ansible_log(monkeypatch):
+    """Keep tests hermetic: no log path is configured unless a test sets one.
+
+    Without this, an ambient ANSIBLE_LOG_PATH or an ansible.cfg log_path would
+    change the HINT/LOG branch and trigger details-file writes.
+    """
+    monkeypatch.delenv("ANSIBLE_LOG_PATH", raising=False)
+    monkeypatch.setattr(_module.C, "DEFAULT_LOG_PATH", None, raising=False)
 
 
 def make_plugin():
@@ -702,3 +716,238 @@ class TestTokenEfficiency:
             assert line.startswith(("msg> ", "stderr> ")), (
                 f"continuation line gained extra prefix: {line!r}"
             )
+
+
+def _stats(failures=1, unreachable=0, ok=1):
+    stats = MagicMock()
+    stats.processed = {"db01": {}}
+    stats.summarize.return_value = {
+        "ok": ok,
+        "changed": 0,
+        "unreachable": unreachable,
+        "failures": failures,
+        "skipped": 0,
+        "rescued": 0,
+        "ignored": 0,
+    }
+    stats.custom = {}
+    return stats
+
+
+def _read_details(path):
+    with open(path, encoding="utf-8") as handle:
+        return [json.loads(line) for line in handle if line.strip()]
+
+
+class TestFailureDetails:
+    """The companion <ANSIBLE_LOG_PATH>.details.jsonl file that makes the
+    escape hatch actually deliver full detail."""
+
+    def test_log_pointer_and_full_detail_on_failure(self, monkeypatch, tmp_path):
+        details = str(tmp_path / "ansible.log") + ".details.jsonl"
+        monkeypatch.setenv("ANSIBLE_LOG_PATH", str(tmp_path / "ansible.log"))
+        plugin = make_plugin()
+
+        plugin.v2_playbook_on_task_start(make_task("Configure nginx"), False)
+        result = make_result(host="db01", msg="Permission denied", stderr="denied")
+        # Detail the trimmed on-screen lines never carry.
+        result.result.update({"rc": 13, "cmd": "systemctl restart nginx", "stdout": ""})
+        plugin.v2_runner_on_failed(result, ignore_errors=False)
+        plugin.v2_playbook_on_stats(_stats())
+
+        lines = displayed_text(plugin)
+        assert lines[-1] == f"LOG | {details}"
+        assert not any(line.startswith("HINT | ") for line in lines)
+
+        rec = _read_details(details)[0]
+        assert rec["status"] == "failed"
+        assert rec["host"] == "db01"
+        assert rec["task"] == "Configure nginx"
+        assert rec["result"]["rc"] == 13
+        assert rec["result"]["cmd"] == "systemctl restart nginx"
+        assert rec["result"]["msg"] == "Permission denied"
+
+    def test_log_pointer_takes_precedence_over_hint(self, monkeypatch, tmp_path):
+        # A real failure with a log path set: agents get the LOG pointer, not a
+        # HINT telling them to set the path they already set.
+        monkeypatch.setenv("ANSIBLE_LOG_PATH", str(tmp_path / "ansible.log"))
+        plugin = make_plugin()
+        plugin.v2_playbook_on_task_start(make_task("T"), False)
+        plugin.v2_runner_on_failed(
+            make_result(host="db01", msg="x"), ignore_errors=False
+        )
+        plugin.v2_playbook_on_stats(_stats())
+        lines = displayed_text(plugin)
+        assert any(line.startswith("LOG | ") for line in lines)
+        assert not any(line.startswith("HINT | ") for line in lines)
+
+    def test_hint_when_failure_and_no_log_path(self, monkeypatch, tmp_path):
+        # No log path: nothing is written and the HINT points at the escape hatch.
+        plugin = make_plugin()
+        plugin.v2_playbook_on_task_start(make_task("T"), False)
+        plugin.v2_runner_on_failed(
+            make_result(host="db01", msg="x"), ignore_errors=False
+        )
+        plugin.v2_playbook_on_stats(_stats())
+        lines = displayed_text(plugin)
+        assert not any(line.startswith("LOG | ") for line in lines)
+        assert any(line.startswith("HINT | ") for line in lines)
+        assert not (tmp_path / "ansible.log.details.jsonl").exists()
+
+    def test_detail_drops_invocation_and_internal_keys(self, monkeypatch, tmp_path):
+        details = str(tmp_path / "ansible.log") + ".details.jsonl"
+        monkeypatch.setenv("ANSIBLE_LOG_PATH", str(tmp_path / "ansible.log"))
+        plugin = make_plugin()
+        plugin.v2_playbook_on_task_start(make_task("Run"), False)
+        result = make_result(host="db01", msg="boom")
+        result.result.update(
+            {
+                "invocation": {"module_args": {"password": "s3cret"}},
+                "_ansible_no_log": False,
+                "_ansible_parsed": True,
+            }
+        )
+        plugin.v2_runner_on_failed(result, ignore_errors=False)
+        rec = _read_details(details)[0]
+        assert "invocation" not in rec["result"]
+        assert all(not k.startswith("_ansible_") for k in rec["result"])
+        assert rec["result"]["msg"] == "boom"
+
+    def test_unreachable_writes_detail(self, monkeypatch, tmp_path):
+        details = str(tmp_path / "ansible.log") + ".details.jsonl"
+        monkeypatch.setenv("ANSIBLE_LOG_PATH", str(tmp_path / "ansible.log"))
+        plugin = make_plugin()
+        plugin.v2_playbook_on_task_start(make_task("Ping"), False)
+        plugin.v2_runner_on_unreachable(make_result(host="db01", msg="SSH timeout"))
+        rec = _read_details(details)[0]
+        assert rec["status"] == "unreachable"
+        assert rec["result"]["msg"] == "SSH timeout"
+
+    def test_item_failure_records_item(self, monkeypatch, tmp_path):
+        details = str(tmp_path / "ansible.log") + ".details.jsonl"
+        monkeypatch.setenv("ANSIBLE_LOG_PATH", str(tmp_path / "ansible.log"))
+        plugin = make_plugin()
+        plugin.v2_playbook_on_task_start(make_task("Install"), False)
+        result = make_result(host="web01", msg="not found")
+        result.result["item"] = "badpkg"
+        plugin.v2_runner_item_on_failed(result)
+        rec = _read_details(details)[0]
+        assert rec["item"] == "badpkg"
+        assert rec["status"] == "failed"
+
+    def test_ignored_failure_recorded_as_ignored(self, monkeypatch, tmp_path):
+        details = str(tmp_path / "ansible.log") + ".details.jsonl"
+        monkeypatch.setenv("ANSIBLE_LOG_PATH", str(tmp_path / "ansible.log"))
+        plugin = make_plugin()
+        plugin.v2_playbook_on_task_start(make_task("Best effort"), False)
+        plugin.v2_runner_on_failed(
+            make_result(host="db01", msg="oops"), ignore_errors=True
+        )
+        assert _read_details(details)[0]["status"] == "ignored"
+
+    def test_multiple_failures_appended(self, monkeypatch, tmp_path):
+        details = str(tmp_path / "ansible.log") + ".details.jsonl"
+        monkeypatch.setenv("ANSIBLE_LOG_PATH", str(tmp_path / "ansible.log"))
+        plugin = make_plugin()
+        plugin.v2_playbook_on_task_start(make_task("T"), False)
+        plugin.v2_runner_on_failed(
+            make_result(host="db01", msg="a"), ignore_errors=False
+        )
+        plugin.v2_runner_on_failed(
+            make_result(host="db02", msg="b"), ignore_errors=False
+        )
+        assert [r["host"] for r in _read_details(details)] == ["db01", "db02"]
+
+    def test_details_truncated_each_run(self, monkeypatch, tmp_path):
+        details = str(tmp_path / "ansible.log") + ".details.jsonl"
+        monkeypatch.setenv("ANSIBLE_LOG_PATH", str(tmp_path / "ansible.log"))
+        first = make_plugin()
+        first.v2_playbook_on_task_start(make_task("T"), False)
+        first.v2_runner_on_failed(make_result(host="old", msg="x"), ignore_errors=False)
+        # A fresh run (new instance) overwrites rather than appends.
+        second = make_plugin()
+        second.v2_playbook_on_task_start(make_task("T"), False)
+        second.v2_runner_on_failed(
+            make_result(host="new", msg="y"), ignore_errors=False
+        )
+        assert [r["host"] for r in _read_details(details)] == ["new"]
+
+    def test_details_accumulate_across_playbooks(self, monkeypatch, tmp_path):
+        # One `ansible-playbook a.yml b.yml` invocation shares one instance and
+        # fires v2_playbook_on_start per playbook; records must accumulate.
+        details = str(tmp_path / "ansible.log") + ".details.jsonl"
+        monkeypatch.setenv("ANSIBLE_LOG_PATH", str(tmp_path / "ansible.log"))
+        plugin = make_plugin()
+        plugin.v2_playbook_on_start(MagicMock())
+        plugin.v2_playbook_on_task_start(make_task("T1"), False)
+        plugin.v2_runner_on_failed(
+            make_result(host="db01", msg="x"), ignore_errors=True
+        )
+        plugin.v2_playbook_on_start(MagicMock())
+        assert [r["host"] for r in _read_details(details)] == ["db01"]
+        plugin.v2_playbook_on_task_start(make_task("T2"), False)
+        plugin.v2_runner_on_failed(
+            make_result(host="db02", msg="y"), ignore_errors=True
+        )
+        assert [r["host"] for r in _read_details(details)] == ["db01", "db02"]
+
+    def test_stale_details_removed_at_start(self, monkeypatch, tmp_path):
+        details = tmp_path / "ansible.log.details.jsonl"
+        monkeypatch.setenv("ANSIBLE_LOG_PATH", str(tmp_path / "ansible.log"))
+        failed = make_plugin()
+        failed.v2_playbook_on_task_start(make_task("T"), False)
+        failed.v2_runner_on_failed(
+            make_result(host="db01", msg="x"), ignore_errors=False
+        )
+        assert details.exists()
+        clean = make_plugin()
+        clean.v2_playbook_on_start(MagicMock())
+        assert not details.exists()
+
+    def test_no_file_on_success(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("ANSIBLE_LOG_PATH", str(tmp_path / "ansible.log"))
+        details = tmp_path / "ansible.log.details.jsonl"
+        plugin = make_plugin()
+        plugin.v2_playbook_on_task_start(make_task("Configure"), False)
+        plugin.v2_runner_on_ok(make_result(host="web01", changed=True))
+        plugin.v2_playbook_on_stats(_stats(failures=0, ok=3))
+        lines = displayed_text(plugin)
+        assert all(not line.startswith("LOG | ") for line in lines)
+        assert not details.exists()
+
+    def test_write_failure_swallowed(self, monkeypatch, tmp_path):
+        # Log path under a nonexistent directory: no crash, no LOG, and no HINT
+        # (the user did set a path, so nudging them to set one would be wrong).
+        monkeypatch.setenv(
+            "ANSIBLE_LOG_PATH", str(tmp_path / "missing" / "ansible.log")
+        )
+        plugin = make_plugin()
+        plugin.v2_playbook_on_task_start(make_task("T"), False)
+        plugin.v2_runner_on_failed(
+            make_result(host="db01", msg="x"), ignore_errors=False
+        )
+        plugin.v2_playbook_on_stats(_stats())
+        lines = displayed_text(plugin)
+        assert not any(line.startswith(("LOG | ", "HINT | ")) for line in lines)
+
+
+class TestLogPathResolution:
+    def test_prefers_env_var(self, monkeypatch):
+        monkeypatch.setenv("ANSIBLE_LOG_PATH", "/tmp/from-env.log")
+        monkeypatch.setattr(_module.C, "DEFAULT_LOG_PATH", "/tmp/from-cfg.log")
+        assert make_plugin()._log_path() == "/tmp/from-env.log"
+
+    def test_falls_back_to_ansible_cfg(self, monkeypatch):
+        monkeypatch.setattr(_module.C, "DEFAULT_LOG_PATH", "/tmp/from-cfg.log")
+        assert make_plugin()._log_path() == "/tmp/from-cfg.log"
+
+    def test_expands_user(self, monkeypatch):
+        monkeypatch.setenv("ANSIBLE_LOG_PATH", "~/ansible.log")
+        assert make_plugin()._log_path() == os.path.expanduser("~/ansible.log")
+
+    def test_details_path_derives_from_log_path(self, monkeypatch):
+        monkeypatch.setenv("ANSIBLE_LOG_PATH", "/var/log/ansible.log")
+        assert make_plugin()._details_path() == "/var/log/ansible.log.details.jsonl"
+
+    def test_details_path_none_when_unset(self):
+        assert make_plugin()._details_path() is None

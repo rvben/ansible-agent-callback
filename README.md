@@ -10,9 +10,9 @@ Compression is asymmetric on purpose:
 - **Success path:** aggressive — clean runs collapse to a single `RECAP`
   line; ok and skipped tasks produce zero output.
 - **Failure path:** readable — full stack traces stay intact via
-  `msg> ` / `stderr> ` continuation lines, plus `rc` and a `HINT`
-  pointing at `ANSIBLE_LOG_PATH` for the full log. Still smaller than
-  default, but optimized for diagnosis over byte count.
+  `msg> ` / `stderr> ` continuation lines, plus `rc`, and full
+  per-task detail captured to a companion file on demand. Still smaller
+  than default, but optimized for diagnosis over byte count.
 
 Verified on a mixed-shape fixture (12 ok, 3 changed, 3 skipped, 2 ignored
 failures, 1 loop) — see [`bench/`](bench/) and run `make bench` to
@@ -97,28 +97,45 @@ forward until the next non-continuation line for the full block.
 ## Full Output When Things Fail
 
 The compressed format keeps successful runs token-cheap, but agents
-sometimes need the full picture to diagnose a failure. Ansible's own
-`ANSIBLE_LOG_PATH` is the escape hatch:
+sometimes need the full picture to diagnose a failure. Set
+`ANSIBLE_LOG_PATH` and the plugin captures the complete, untrimmed
+result of every failed or unreachable task:
 
 ```bash
 ANSIBLE_LOG_PATH=/tmp/ansible.log ansible-playbook site.yml
 ```
 
-The plugin keeps emitting its compressed output to stdout; Ansible
-writes the unfiltered default-format log to the path you set. Agents
-can `grep` or `tail` it on demand without paying the token cost up
-front.
+Full detail goes to a companion file beside the log,
+`<ANSIBLE_LOG_PATH>.details.jsonl`, and a `LOG` line after the RECAP
+points at it:
 
-When a run has failures or unreachable hosts and `ANSIBLE_LOG_PATH`
-is not set, the plugin appends a single `HINT` line after the RECAP
-to surface this escape hatch at the moment it's actually useful:
+```text
+failed | db01 | msg: Permission denied | rc: 1
+RECAP | db01: ok=1 failed=1
+LOG | /tmp/ansible.log.details.jsonl
+```
+
+Each line is one JSON object with the host, task, status, and the full
+result (`rc`, `cmd`, `stderr`, `stdout`, `msg`, `diff`, ...), everything
+an agent needs without re-running the play. The module invocation and
+internal keys are dropped, and `no_log` results stay censored by Ansible.
+The file is written only when something fails and cleared at the start of
+each run, so a clean run leaves no file and stdout stays token-cheap.
+
+Why a companion file and not `ANSIBLE_LOG_PATH` itself? That log is fed by
+Ansible's `Display`, which records whatever the active stdout callback
+prints. With this callback that means the same compressed lines, not the
+full result, so the untrimmed detail needs its own file.
+
+When a run fails and `ANSIBLE_LOG_PATH` is not set, the plugin appends a
+single `HINT` after the RECAP so an agent can opt in:
 
 ```text
 RECAP | db01: ok=1 failed=1
-HINT | set ANSIBLE_LOG_PATH=<path> and re-run for full output
+HINT | set ANSIBLE_LOG_PATH=<path> and re-run to capture full failure detail
 ```
 
-Clean runs stay clean — no hint, no extra lines.
+Clean runs stay clean: no hint, no file, no extra lines.
 
 ## Commands
 

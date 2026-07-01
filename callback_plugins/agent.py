@@ -16,14 +16,18 @@ DOCUMENTATION = """
           or "stderr> " — stack traces and multi-line errors stay readable
         - rc is always emitted on failure when present, alongside any msg/stderr
         - RECAP line always shown with non-zero counts
-        - HINT line is appended after RECAP when failures or unreachable hosts
-          occurred and ANSIBLE_LOG_PATH is unset, pointing at the full-log
+        - When ANSIBLE_LOG_PATH is set, full detail for failed/unreachable tasks is
+          written to <ANSIBLE_LOG_PATH>.details.jsonl and a LOG line points to it
+        - When ANSIBLE_LOG_PATH is unset, a HINT line after RECAP points at that
           escape hatch
 """
 
 import difflib
+import json
 import os
 
+from ansible import constants as C
+from ansible.parsing.ajson import AnsibleJSONEncoder
 from ansible.plugins.callback import CallbackBase
 
 
@@ -35,6 +39,9 @@ class CallbackModule(CallbackBase):
     def __init__(self):
         super().__init__()
         self._pending_task = None
+        self._current_task_name = None
+        self._details_target = None
+        self._details_cleared = False
 
     def _emit(self, line):
         self._display.display(line)
@@ -44,15 +51,35 @@ class CallbackModule(CallbackBase):
             self._emit(f"TASK | {self._pending_task}")
             self._pending_task = None
 
+    def v2_playbook_on_start(self, playbook):
+        # Clear a details file left by a previous invocation, so a run that
+        # produces no failures leaves nothing at the deterministic companion
+        # path. Multiple playbooks passed to one `ansible-playbook` call share
+        # this callback instance and must accumulate into a single file, so only
+        # the first playbook start clears it.
+        if self._details_cleared:
+            return
+        self._details_cleared = True
+        target = self._details_path()
+        if not target:
+            return
+        try:
+            os.remove(target)
+        except OSError:
+            pass
+
     def v2_playbook_on_play_start(self, play):
         name = play.get_name().strip()
         self._emit(f"PLAY | {name}")
 
     def v2_playbook_on_task_start(self, task, is_conditional):
-        self._pending_task = task.get_name().strip()
+        name = task.get_name().strip()
+        self._pending_task = name
+        self._current_task_name = name
 
     def v2_playbook_on_handler_task_start(self, task):
         name = task.get_name().strip()
+        self._current_task_name = name
         self._emit(f"HANDLER | {name}")
 
     def _format_diff_summary(self, diff):
@@ -182,6 +209,7 @@ class CallbackModule(CallbackBase):
         self._emit_failure(f"failed | {host}", result)
         if ignore_errors:
             self._emit("...ignoring")
+        self._write_detail("ignored" if ignore_errors else "failed", result)
 
     def v2_runner_on_unreachable(self, result):
         self._flush_task_banner()
@@ -189,10 +217,11 @@ class CallbackModule(CallbackBase):
         msg_lines = self._split_lines(result.result.get("msg"))
         if not msg_lines:
             self._emit(f"unreachable | {host}")
-            return
-        self._emit(f"unreachable | {host} | {msg_lines[0]}")
-        for line in msg_lines[1:]:
-            self._emit(f"msg> {line}")
+        else:
+            self._emit(f"unreachable | {host} | {msg_lines[0]}")
+            for line in msg_lines[1:]:
+                self._emit(f"msg> {line}")
+        self._write_detail("unreachable", result)
 
     def v2_runner_on_skipped(self, result):
         pass
@@ -218,9 +247,72 @@ class CallbackModule(CallbackBase):
         host = result.host.get_name()
         item = self._get_item_label(result.result)
         self._emit_failure(f"failed | {host} | item: {item}", result)
+        self._write_detail("failed", result, item=item)
 
     def v2_runner_item_on_skipped(self, result):
         pass
+
+    def _log_path(self):
+        """Resolve the configured Ansible log path, if any.
+
+        Prefers the ANSIBLE_LOG_PATH environment variable (matching Ansible's
+        own precedence) and falls back to the [defaults] log_path setting from
+        ansible.cfg. Returns an absolute path, or None when file logging is not
+        configured.
+        """
+        raw = os.environ.get("ANSIBLE_LOG_PATH") or getattr(C, "DEFAULT_LOG_PATH", None)
+        if not raw:
+            return None
+        return os.path.abspath(os.path.expanduser(str(raw)))
+
+    def _details_path(self):
+        """Path to the companion file holding full detail for failures.
+
+        The concise stdout is mirrored verbatim into ANSIBLE_LOG_PATH, so that
+        log cannot recover the fields this callback trims. Instead the untrimmed
+        results are written next to it, at <ANSIBLE_LOG_PATH>.details.jsonl.
+        Returns None when no log path is configured.
+        """
+        log_path = self._log_path()
+        if not log_path:
+            return None
+        return log_path + ".details.jsonl"
+
+    def _write_detail(self, status, result, item=None):
+        """Append one host's full, untrimmed result to the details file.
+
+        Internal (_ansible_*) keys and the module invocation are dropped: the
+        invocation echoes task arguments (a needless secret surface) and adds
+        nothing to debugging beyond msg/stderr/stdout/rc. Results for no_log
+        tasks are already censored by ansible-core before reaching callbacks.
+        """
+        target = self._details_path()
+        if not target:
+            return
+        record = {
+            "status": status,
+            "host": result.host.get_name(),
+            "task": self._current_task_name,
+        }
+        if item is not None:
+            record["item"] = item
+        record["result"] = {
+            key: value
+            for key, value in result.result.items()
+            if not key.startswith("_ansible_") and key != "invocation"
+        }
+        line = json.dumps(record, cls=AnsibleJSONEncoder)
+        # The first successful write truncates any file left by a previous run;
+        # later writes this run append. A write failure (e.g. an unwritable
+        # directory) must never abort the play, so it is swallowed and the LOG
+        # pointer is simply not emitted.
+        mode = "a" if self._details_target else "w"
+        try:
+            with open(target, mode, encoding="utf-8") as handle:
+                handle.write(line + "\n")
+        except OSError:
+            return
+        self._details_target = target
 
     def v2_playbook_on_stats(self, stats):
         hosts = sorted(stats.processed.keys())
@@ -247,8 +339,13 @@ class CallbackModule(CallbackBase):
 
         self._emit("RECAP | " + " | ".join(host_summaries))
 
-        # Surface the escape hatch only when the agent will actually need it:
-        # something failed and the user hasn't already opted into full logging.
-        # Empty string matches Ansible's own "logging disabled" semantics.
-        if has_problems and not os.environ.get("ANSIBLE_LOG_PATH"):
-            self._emit("HINT | set ANSIBLE_LOG_PATH=<path> and re-run for full output")
+        # When detail was captured, point agents straight at it. Otherwise, if
+        # something failed without a log path configured, surface the escape
+        # hatch. Setting ANSIBLE_LOG_PATH captures the full result to a companion
+        # file, so the hint promises exactly what re-running delivers.
+        if self._details_target:
+            self._emit(f"LOG | {self._details_target}")
+        elif has_problems and not self._log_path():
+            self._emit(
+                "HINT | set ANSIBLE_LOG_PATH=<path> and re-run to capture full failure detail"
+            )
