@@ -1,8 +1,8 @@
 """Tests for the plugin installer."""
 
 import os
-import sys
 import shutil
+import sys
 import tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))

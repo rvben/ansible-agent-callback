@@ -9,11 +9,11 @@ import tempfile
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from ansible_agent_callback.agents import (
+    ansible_cfg,
     claude_code,
     codex_cli,
     gemini_cli,
     shell,
-    ansible_cfg,
 )
 
 ENV_KEY = "ANSIBLE_STDOUT_CALLBACK"

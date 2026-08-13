@@ -1,0 +1,28 @@
+name: clispec v0.3
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  conformance:
+    name: 24/24 Excellent
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install CLI
+        run: uv sync --locked
+      - name: Install clispec scorer
+        run: cargo install clispec-cli --version 0.3.0 --locked
+      - name: Require clispec v0.3 Excellent
+        shell: bash
+        run: |
+          report="$(clispec score .venv/bin/ansible-agent-callback --output json)"
+          echo "$report" | jq .
+          jq -e '.score == 24 and .max == 24 and .grade == "Excellent"' <<<"$report"

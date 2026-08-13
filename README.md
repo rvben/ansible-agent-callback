@@ -147,7 +147,13 @@ ansible-agent-callback install --plugin-only # Just the plugin, no agent config
 ansible-agent-callback update               # Update plugin to latest version
 ansible-agent-callback uninstall            # Remove plugin + agent configs
 ansible-agent-callback env                  # Print export for other agents
+ansible-agent-callback schema               # Print the clispec v0.3 contract
+ansible-agent-callback capabilities         # Print offline-safe capabilities
+ansible-agent-callback completions zsh      # Generate shell completions
 ```
+
+All data commands accept `--output auto|text|json` (or `-o`). `auto` uses
+human-readable text on a terminal and JSON when stdout is piped.
 
 ## Supported Agents
 

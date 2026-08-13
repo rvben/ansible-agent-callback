@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and
 tracking starts at the current release.
 
+## [0.3.3] - 2026-08-13
+
+### Added
+
+- Canonical clispec v0.3 schema and offline `capabilities` introspection.
+- Structured JSON output, structured usage errors, and shell completions.
+- CI conformance gate requiring a 24/24 Excellent score.
 
 ## [0.3.2](https://github.com/rvben/ansible-agent-callback/compare/v0.3.1...v0.3.2) - 2026-07-01
 
