@@ -14,17 +14,17 @@ uninstall:
 	@echo "Removed $(INSTALL_DIR)/$(PLUGIN_NAME).py"
 
 test:
-	uv run --with pytest --with ansible-core pytest tests/ -v
+	uv run pytest tests/ -v
 
 lint:
 	python3 -m py_compile callback_plugins/agent.py
 	python3 -m py_compile src/ansible_agent_callback/plugin.py
-	uvx ruff check .
-	uvx ruff format --check .
+	uv run ruff check .
+	uv run ruff format --check .
 
 fmt:
-	uvx ruff check --fix .
-	uvx ruff format .
+	uv run ruff check --fix .
+	uv run ruff format .
 
 build:
 	uv build
@@ -33,7 +33,7 @@ dev:
 	uv pip install -e .
 
 bench:
-	uv run --with ansible-core python bench/run.py
+	uv run python bench/run.py
 
 check: lint test
 

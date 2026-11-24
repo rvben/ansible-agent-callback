@@ -21,6 +21,19 @@ ansible-agent-callback = "ansible_agent_callback.cli:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[dependency-groups]
+dev = [
+    "ansible-core>=2.17",
+    "pytest>=8",
+    "pytest-cov>=5",
+    "ruff>=0.6",
+]
+
+[tool.uv]
+exclude-newer = "7 days"
+# Every locked dependency ships a wheel, so nothing is built from source at install time.
+no-build = true
+
 [tool.ruff.lint.per-file-ignores]
 "callback_plugins/agent.py" = ["E402"]
 "src/ansible_agent_callback/plugin.py" = ["E402"]
